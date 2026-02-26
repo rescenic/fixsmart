@@ -4,4 +4,3 @@
 /dompdf/vendor/
 .env
 .env.*
-config.php
