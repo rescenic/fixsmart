@@ -78,6 +78,39 @@ body::before{content:'';position:absolute;inset:0;background:repeating-linear-gr
 .demo strong{display:block;color:#555;margin-bottom:5px;}
 .demo-row{display:flex;justify-content:space-between;margin-bottom:2px;}
 @media(max-width:600px){.left{display:none;}.right{flex:0 0 100%;}.wrap{max-width:380px;}}
+.wa-group-box {
+  margin-top: 20px;
+}
+
+.wa-group-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #25D366;
+  color: #fff;
+  border-radius: 6px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: 0.2s ease;
+}
+
+.wa-group-link:hover {
+  background: #1ebe5d;
+  text-decoration: none;
+  color: #fff;
+}
+
+.wa-group-link i {
+  font-size: 18px;
+}
+
+.wa-group-desc {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #666;
+}
 </style>
 </head>
 <body>
@@ -90,11 +123,23 @@ body::before{content:'';position:absolute;inset:0;background:repeating-linear-gr
     <h2>Sistem Order Layanan IT</h2>
     <p>Ajukan permintaan layanan IT Anda dengan mudah dan pantau statusnya secara real-time hingga selesai.</p>
     <ul class="feat">
+
       <li><i class="fa fa-check-circle"></i> Buat tiket order IT kapan saja</li>
       <li><i class="fa fa-check-circle"></i> Pantau status: Menunggu → Diproses → Selesai</li>
       <li><i class="fa fa-check-circle"></i> Notifikasi setiap perubahan status</li>
       <li><i class="fa fa-check-circle"></i> Riwayat & histori lengkap per tiket</li>
       <li><i class="fa fa-check-circle"></i> Pengukuran SLA otomatis</li>
+      <div class="wa-group-box">
+  <a href="https://chat.whatsapp.com/JlLw0jaANMG0m1oAu7wYWP?mode=gi_t" 
+     target="_blank" 
+     class="wa-group-link">
+    <i class="fab fa-whatsapp"></i>
+    Gabung Grup WhatsApp FixSmart Helpdesk
+  </a>
+  <small class="wa-group-desc">
+    Dapatkan informasi, pengumuman update, dan bantuan cepat seputar aplikasi FixSmart.
+  </small>
+</div>
     </ul>
     <div class="left-foot">© <?= date('Y') ?> <?= APP_NAME ?>. - 082177846209.</div>
   </div>
