@@ -82,6 +82,16 @@ $_css_url  = APP_URL . '/assets/css/style.css';
       ")->fetchColumn();
   } catch(Exception $e) {}
 
+  // Badge koneksi offline
+  $cnt_offline = 0;
+  try {
+      $cnt_offline = (int)$pdo->query("
+          SELECT COUNT(*) FROM koneksi_monitor m
+          WHERE aktif = 1
+            AND (SELECT status FROM koneksi_log WHERE monitor_id = m.id ORDER BY cek_at DESC LIMIT 1) = 'offline'
+      ")->fetchColumn();
+  } catch(Exception $e) {}
+
   // Badge tiket aktif milik user
   $cnt_user_aktif = 0;
   if (hasRole('user')) {
@@ -130,7 +140,6 @@ $_css_url  = APP_URL . '/assets/css/style.css';
 
   <?php /* ══════════════════════════════════════════════════════
             MENU: TEKNISI
-            (semua menu teknisi + TIDAK ada master data/setting)
          ══════════════════════════════════════════════════════ */
   elseif (hasRole('teknisi')): ?>
 
@@ -174,11 +183,18 @@ $_css_url  = APP_URL . '/assets/css/style.css';
       <?php endif; ?>
     </a>
   </div>
+  <div class="nav-item <?= ($active_menu??'')==='cek_koneksi'?'active':'' ?>">
+    <a href="<?= APP_URL ?>/pages/cek_koneksi.php">
+      <i class="fa fa-wifi ni"></i><span class="nl">Monitor Koneksi</span>
+      <?php if ($cnt_offline): ?>
+      <span class="nc" style="background:#ef4444;"><?= $cnt_offline ?></span>
+      <?php endif; ?>
+    </a>
+  </div>
 
 
   <?php /* ══════════════════════════════════════════════════════
             MENU: ADMIN
-            (semua menu + master data + pengaturan)
          ══════════════════════════════════════════════════════ */
   else: // admin ?>
 
@@ -219,6 +235,14 @@ $_css_url  = APP_URL . '/assets/css/style.css';
       <i class="fa fa-screwdriver-wrench ni"></i><span class="nl">Maintenance IT</span>
       <?php if ($cnt_mnt_urgent): ?>
       <span class="nc" style="background:#f59e0b;"><?= $cnt_mnt_urgent ?></span>
+      <?php endif; ?>
+    </a>
+  </div>
+  <div class="nav-item <?= ($active_menu??'')==='cek_koneksi'?'active':'' ?>">
+    <a href="<?= APP_URL ?>/pages/cek_koneksi.php">
+      <i class="fa fa-wifi ni"></i><span class="nl">Monitor Koneksi</span>
+      <?php if ($cnt_offline): ?>
+      <span class="nc" style="background:#ef4444;"><?= $cnt_offline ?></span>
       <?php endif; ?>
     </a>
   </div>
