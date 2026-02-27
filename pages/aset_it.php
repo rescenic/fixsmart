@@ -177,6 +177,22 @@ include '../includes/header.php';
 .f-inp{width:100%;padding:8px 11px;border:1px solid #d1d5db;border-radius:6px;font-size:12.5px;box-sizing:border-box;font-family:inherit;transition:border .18s;}
 .f-inp:focus{outline:none;border-color:#26B99A;box-shadow:0 0 0 3px rgba(38,185,154,.12);}
 .f-inp:disabled{background:#f8fafc;color:#94a3b8;cursor:not-allowed;}
+
+/* ── Dropdown Cetak ── */
+.cetak-drop-wrap{position:relative;display:inline-block;}
+.cetak-drop-menu{display:none;position:absolute;right:0;top:36px;z-index:9999;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.13);min-width:238px;overflow:hidden;}
+.cetak-drop-menu.open{display:block;}
+.cdm-head{padding:8px 13px;background:#f8fafc;border-bottom:1px solid #e2e8f0;}
+.cdm-head-txt{font-size:11px;font-weight:700;color:#374151;}
+.cdm-section{padding:6px 13px 4px;font-size:9.5px;font-weight:700;color:#94a3b8;letter-spacing:1.2px;text-transform:uppercase;border-bottom:1px solid #f1f5f9;}
+.cdm-item{display:flex;align-items:center;gap:10px;padding:9px 13px;text-decoration:none;color:#1e293b;border-bottom:1px solid #f1f5f9;transition:background .14s;cursor:pointer;}
+.cdm-item:hover{background:#f0fdf9;}
+.cdm-item:last-of-type{border-bottom:none;}
+.cdm-icon{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;}
+.cdm-item-sm{display:flex;align-items:center;gap:9px;padding:7px 13px;text-decoration:none;color:#1e293b;border-bottom:1px solid #f1f5f9;font-size:12px;transition:background .14s;}
+.cdm-item-sm:hover{background:#f0fdf9;}
+.cdm-foot{padding:6px 13px;background:#f8fafc;border-top:1px solid #e2e8f0;}
+.cdm-foot-txt{font-size:10px;color:#94a3b8;}
 </style>
 
 <div class="page-header">
@@ -232,6 +248,100 @@ include '../includes/header.php';
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
         <span class="tbl-info"><?= $total ?> aset</span>
+
+        <!-- ══ DROPDOWN CETAK LAPORAN ══ -->
+        <div class="cetak-drop-wrap" id="wrap-cetak">
+          <button type="button" id="btn-cetak" onclick="toggleCetakDrop(event)"
+            class="btn btn-default btn-sm"
+            style="border-color:#26B99A;color:#0f766e;font-weight:600;">
+            <i class="fa fa-print"></i> Cetak
+            <i class="fa fa-chevron-down" style="font-size:9px;margin-left:3px;"></i>
+          </button>
+          <div class="cetak-drop-menu" id="cetak-drop">
+
+            <!-- Header -->
+            <div class="cdm-head">
+              <div class="cdm-head-txt"><i class="fa fa-file-pdf" style="color:#ef4444;margin-right:5px;"></i> Pilih Jenis Laporan PDF</div>
+            </div>
+
+            <!-- Semua Aset -->
+            <a href="<?= APP_URL ?>/pages/cetak_aset_it.php?mode=semua" target="_blank" class="cdm-item">
+              <div class="cdm-icon" style="background:#eff6ff;">
+                <i class="fa fa-boxes-stacked" style="color:#1d4ed8;"></i>
+              </div>
+              <div>
+                <div style="font-size:12.5px;font-weight:700;color:#1e293b;">Semua Aset IT</div>
+                <div style="font-size:10.5px;color:#94a3b8;">Laporan lengkap seluruh kategori</div>
+              </div>
+              <i class="fa fa-arrow-up-right-from-square" style="margin-left:auto;color:#cbd5e1;font-size:10px;"></i>
+            </a>
+
+            <!-- Per Kategori -->
+            <?php if (!empty($kat_opts)): ?>
+            <div class="cdm-section">Per Kategori</div>
+            <?php
+            $kat_icons = [
+                'Laptop'          => ['fa-laptop',         '#6366f1'],
+                'Desktop'         => ['fa-desktop',        '#0891b2'],
+                'Printer'         => ['fa-print',          '#d97706'],
+                'Scanner'         => ['fa-scanner',        '#059669'],
+                'Server'          => ['fa-server',         '#7c3aed'],
+                'Switch'          => ['fa-network-wired',  '#0f766e'],
+                'Router'          => ['fa-router',         '#b45309'],
+                'Access Point'    => ['fa-wifi',           '#16a34a'],
+                'Monitor'         => ['fa-display',        '#2563eb'],
+                'Keyboard'        => ['fa-keyboard',       '#475569'],
+                'Mouse'           => ['fa-computer-mouse', '#475569'],
+                'UPS'             => ['fa-battery-full',   '#ca8a04'],
+                'Proyektor'       => ['fa-projector',      '#9333ea'],
+                'Kamera IP'       => ['fa-camera',         '#dc2626'],
+                'Telepon'         => ['fa-phone',          '#0284c7'],
+                'Tablet'          => ['fa-tablet',         '#7c3aed'],
+            ];
+            foreach ($kat_opts as $k):
+                [$ico, $col] = $kat_icons[$k] ?? ['fa-tag', '#26B99A'];
+            ?>
+            <a href="<?= APP_URL ?>/pages/cetak_aset_it.php?mode=kategori&kategori=<?= urlencode($k) ?>" target="_blank" class="cdm-item-sm">
+              <div class="cdm-icon" style="background:<?= $col ?>18;width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <i class="fa <?= $ico ?>" style="color:<?= $col ?>;font-size:11px;"></i>
+              </div>
+              <span style="font-weight:600;"><?= clean($k) ?></span>
+              <span style="margin-left:auto;font-size:10.5px;color:#94a3b8;"><?= count(array_filter($asets, fn($a) => $a['kategori'] === $k)) ?: '' ?></span>
+              <i class="fa fa-arrow-up-right-from-square" style="color:#e2e8f0;font-size:9px;margin-left:4px;"></i>
+            </a>
+            <?php endforeach; ?>
+            <?php endif; ?>
+
+            <!-- Filter Kondisi -->
+            <div class="cdm-section" style="margin-top:2px;">Filter Kondisi</div>
+            <?php
+            $kond_conf = [
+                'Baik'            => ['fa-circle-check', '#16a34a', '#dcfce7'],
+                'Rusak'           => ['fa-circle-xmark', '#dc2626', '#fee2e2'],
+                'Dalam Perbaikan' => ['fa-wrench',       '#d97706', '#fef9c3'],
+                'Tidak Aktif'     => ['fa-ban',          '#64748b', '#f1f5f9'],
+            ];
+            foreach ($kond_conf as $kond => [$kico, $kcol, $kbg]): ?>
+            <a href="<?= APP_URL ?>/pages/cetak_aset_it.php?mode=semua&kondisi=<?= urlencode($kond) ?>" target="_blank" class="cdm-item-sm">
+              <div style="width:22px;height:22px;border-radius:50%;background:<?= $kbg ?>;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <i class="fa <?= $kico ?>" style="color:<?= $kcol ?>;font-size:10px;"></i>
+              </div>
+              <span>Kondisi: <strong><?= $kond ?></strong></span>
+              <span style="margin-left:auto;font-size:10.5px;background:<?= $kbg ?>;color:<?= $kcol ?>;padding:1px 7px;border-radius:9px;font-weight:700;"><?= $stats_kondisi[$kond] ?? 0 ?></span>
+            </a>
+            <?php endforeach; ?>
+
+            <!-- Footer -->
+            <div class="cdm-foot">
+              <div class="cdm-foot-txt">
+                <i class="fa fa-circle-info" style="color:#26B99A;"></i>
+                Laporan terbuka di tab baru sebagai PDF
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- ══ END DROPDOWN CETAK ══ -->
+
         <?php if(hasRole(['admin','teknisi'])): ?>
         <button onclick="bukaModalTambah()" class="btn btn-primary btn-sm"><i class="fa fa-plus"></i> Tambah Aset</button>
         <?php endif; ?>
@@ -549,6 +659,20 @@ include '../includes/header.php';
 ════════════════════════════════════════════════════════ -->
 <script>
 const APP_URL = '<?= APP_URL ?>';
+
+/* ── Dropdown Cetak Laporan ──────────────────────────────────────── */
+function toggleCetakDrop(e) {
+    e.stopPropagation();
+    const menu = document.getElementById('cetak-drop');
+    menu.classList.toggle('open');
+}
+// Klik di luar → tutup
+document.addEventListener('click', function(e) {
+    const wrap = document.getElementById('wrap-cetak');
+    if (wrap && !wrap.contains(e.target)) {
+        document.getElementById('cetak-drop').classList.remove('open');
+    }
+});
 
 /* ── Toggle Auto / Manual No. Inventaris ─────────────────────────── */
 function toggleInv(chk) {

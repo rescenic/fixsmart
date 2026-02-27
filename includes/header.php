@@ -192,6 +192,16 @@ $_css_url  = APP_URL . '/assets/css/style.css';
     </a>
   </div>
 
+<div class="nav-item <?= ($active_menu??'')==='server_room'?'active':'' ?>">
+  <a href="<?= APP_URL ?>/pages/server_room.php">
+    <i class="fa fa-server ni"></i>
+    <span class="nl">Monitoring Server</span>
+    <?php if ($cnt_mnt_urgent): ?>
+      <span class="nc" style="background:#f59e0b;"><?= $cnt_mnt_urgent ?></span>
+    <?php endif; ?>
+  </a>
+</div>
+
 
   <?php /* ══════════════════════════════════════════════════════
             MENU: ADMIN
@@ -246,6 +256,16 @@ $_css_url  = APP_URL . '/assets/css/style.css';
       <?php endif; ?>
     </a>
   </div>
+
+<div class="nav-item <?= ($active_menu??'')==='server_room'?'active':'' ?>">
+  <a href="<?= APP_URL ?>/pages/server_room.php">
+    <i class="fa fa-server ni"></i>
+    <span class="nl">Monitoring Server</span>
+    <?php if ($cnt_mnt_urgent): ?>
+      <span class="nc" style="background:#f59e0b;"><?= $cnt_mnt_urgent ?></span>
+    <?php endif; ?>
+  </a>
+</div>
 
   <div class="nav-sec">Master Data</div>
   <div class="nav-item <?= ($active_menu??'')==='kategori'?'active':'' ?>">
