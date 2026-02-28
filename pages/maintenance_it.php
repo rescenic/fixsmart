@@ -245,8 +245,45 @@ include '../includes/header.php';
     transition:all .18s; text-decoration:none;
 }
 .btn-cetak-outline:hover{background:#7c3aed;color:#fff;}
+
+/* ── Modal Cetak Maintenance ── */
+.mcm-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center;}
+.mcm-overlay.open{display:flex;}
+.mcm-box{background:#fff;width:100%;max-width:540px;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;animation:mIn .2s ease;}
+
+.mcm-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(135deg,#1a2e3f,#3b0764);}
+.mcm-head-icon{width:30px;height:30px;background:rgba(167,139,250,.25);border:1px solid rgba(167,139,250,.5);border-radius:6px;display:flex;align-items:center;justify-content:center;}
+.mcm-head-title{color:#fff;font-size:13.5px;font-weight:700;margin-left:10px;}
+.mcm-head-sub{color:rgba(255,255,255,.4);font-size:10px;margin-left:10px;}
+.mcm-close{width:25px;height:25px;border-radius:50%;background:rgba(255,255,255,.1);border:none;cursor:pointer;color:#ccc;font-size:12px;display:flex;align-items:center;justify-content:center;transition:background .15s;}
+.mcm-close:hover{background:#ef4444;color:#fff;}
+.mcm-body{padding:18px 20px;}
+.mcm-section{margin-bottom:16px;}
+.mcm-section-label{font-size:11px;font-weight:700;color:#374151;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+.mcm-section-label i{color:#7c3aed;}
+.mcm-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.mcm-label{font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px;}
+.mcm-inp{width:100%;padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;box-sizing:border-box;font-family:inherit;transition:border .15s;}
+.mcm-inp:focus{outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.1);}
+.mcm-period-chips{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;}
+.mcm-period-chip{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;cursor:pointer;transition:all .14s;white-space:nowrap;}
+.mcm-period-chip:hover,.mcm-period-chip.active{background:#7c3aed;color:#fff;border-color:#7c3aed;}
+.mcm-report-opts{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.mcm-report-opt{border:2px solid #e2e8f0;border-radius:8px;padding:10px 12px;cursor:pointer;transition:all .15s;background:#fff;}
+.mcm-report-opt:hover{border-color:#7c3aed;background:#faf5ff;}
+.mcm-report-opt.selected{border-color:#7c3aed;background:#faf5ff;}
+.mcm-report-opt-icon{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;margin-bottom:6px;}
+.mcm-report-opt-title{font-size:12px;font-weight:700;color:#1e293b;}
+.mcm-report-opt-sub{font-size:10px;color:#94a3b8;margin-top:2px;line-height:1.4;}
+.mcm-foot{padding:12px 18px;border-top:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center;background:#f8fafc;}
+.mcm-preview-bar{font-size:10.5px;color:#4c1d95;background:#faf5ff;border:1px solid #e9d5ff;border-radius:5px;padding:6px 12px;margin:0 18px 12px;display:none;line-height:1.6;}
+.mcm-preview-bar.show{display:block;}
 </style>
 
+
+<!-- ═══════════════════════════════════════
+     PAGE HEADER
+═══════════════════════════════════════ -->
 <div class="page-header">
   <h4><i class="fa fa-screwdriver-wrench text-primary"></i> &nbsp;Maintenance IT</h4>
   <div class="breadcrumb">
@@ -354,8 +391,18 @@ include '../includes/header.php';
           <?php endif; ?>
         </form>
       </div>
+
       <div style="display:flex;align-items:center;gap:8px;">
         <span class="tbl-info"><?= $total ?> catatan</span>
+
+        <!-- ══ TOMBOL CETAK LAPORAN ══ -->
+        <button type="button" onclick="bukaModalCetakMnt()"
+          class="btn btn-default btn-sm"
+          style="border-color:#7c3aed;color:#6d28d9;font-weight:600;">
+          <i class="fa fa-file-pdf"></i> Cetak Laporan
+        </button>
+        <!-- ══ END TOMBOL CETAK ══ -->
+
         <?php if(hasRole(['admin','teknisi'])): ?>
         <button onclick="bukaModalTambah()" class="btn btn-primary btn-sm"><i class="fa fa-plus"></i> Catat Maintenance</button>
         <?php endif; ?>
@@ -434,34 +481,15 @@ include '../includes/header.php';
             <td style="font-size:12px;">
               <?= $m['biaya'] ? '<span style="color:#10b981;font-weight:600;">Rp '.number_format($m['biaya'],0,',','.').'</span>' : '—' ?>
             </td>
-
-            <!-- ══ KOLOM AKSI — ada tombol cetak ══ -->
             <td>
               <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                <!-- Detail -->
-                <button onclick="lihatDetail(<?= $m['id'] ?>)"
-                  class="btn btn-info btn-sm" title="Lihat Detail">
-                  <i class="fa fa-eye"></i>
-                </button>
-                <!-- Edit -->
+                <button onclick="lihatDetail(<?= $m['id'] ?>)" class="btn btn-info btn-sm" title="Lihat Detail"><i class="fa fa-eye"></i></button>
                 <?php if(hasRole(['admin','teknisi'])): ?>
-                <button onclick="editMnt(<?= $m['id'] ?>)"
-                  class="btn btn-warning btn-sm" title="Edit">
-                  <i class="fa fa-pen"></i>
-                </button>
+                <button onclick="editMnt(<?= $m['id'] ?>)" class="btn btn-warning btn-sm" title="Edit"><i class="fa fa-pen"></i></button>
                 <?php endif; ?>
-                <!-- ★ CETAK KARTU ★ -->
-                <a href="<?= APP_URL ?>/pages/cetak_maintenance.php?id=<?= $m['id'] ?>&preview=1"
-                  target="_blank"
-                  class="btn-cetak" title="Cetak / Preview Kartu Maintenance">
-                  <i class="fa fa-print"></i>
-                </a>
-                <!-- Hapus -->
+                <a href="<?= APP_URL ?>/pages/cetak_maintenance.php?id=<?= $m['id'] ?>&preview=1" target="_blank" class="btn-cetak" title="Cetak Kartu"><i class="fa fa-print"></i></a>
                 <?php if(hasRole('admin')): ?>
-                <button onclick="hapusMnt(<?= $m['id'] ?>,'<?= addslashes(clean($m['no_maintenance'])) ?>')"
-                  class="btn btn-danger btn-sm" title="Hapus">
-                  <i class="fa fa-trash"></i>
-                </button>
+                <button onclick="hapusMnt(<?= $m['id'] ?>,'<?= addslashes(clean($m['no_maintenance'])) ?>')" class="btn btn-danger btn-sm" title="Hapus"><i class="fa fa-trash"></i></button>
                 <?php endif; ?>
               </div>
             </td>
@@ -486,12 +514,136 @@ include '../includes/header.php';
 </div><!-- /content -->
 
 
-<!-- ════════════════════════════════════════════════════════════
+<!-- ═══════════════════════════════════════════════════
+     MODAL CETAK LAPORAN MAINTENANCE
+═══════════════════════════════════════════════════ -->
+<div class="mcm-overlay" id="mcm-overlay">
+  <div class="mcm-box">
+
+    <!-- Header -->
+    <div class="mcm-head">
+      <div style="display:flex;align-items:center;">
+        <div class="mcm-head-icon"><i class="fa fa-print" style="color:#a78bfa;font-size:13px;"></i></div>
+        <div>
+          <div class="mcm-head-title">Cetak Laporan Maintenance IT</div>
+          <div class="mcm-head-sub">Pilih periode, jenis, dan mode laporan</div>
+        </div>
+      </div>
+      <button class="mcm-close" onclick="tutupModalCetakMnt()"><i class="fa fa-times"></i></button>
+    </div>
+
+    <!-- Body -->
+    <div class="mcm-body">
+
+      <!-- Pilihan cepat periode -->
+      <div class="mcm-section">
+        <div class="mcm-section-label"><i class="fa fa-calendar-days"></i> Pilihan Cepat Periode</div>
+        <div class="mcm-period-chips">
+          <span class="mcm-period-chip" onclick="mcmSetPeriod('bulan_ini',this)">Bulan Ini</span>
+          <span class="mcm-period-chip" onclick="mcmSetPeriod('bulan_lalu',this)">Bulan Lalu</span>
+          <span class="mcm-period-chip" onclick="mcmSetPeriod('3_bulan',this)">3 Bulan Terakhir</span>
+          <span class="mcm-period-chip" onclick="mcmSetPeriod('6_bulan',this)">6 Bulan Terakhir</span>
+          <span class="mcm-period-chip" onclick="mcmSetPeriod('tahun_ini',this)">Tahun Ini</span>
+          <span class="mcm-period-chip active" onclick="mcmSetPeriod('semua',this)">Semua Waktu</span>
+        </div>
+      </div>
+
+      <!-- Rentang tanggal manual -->
+      <div class="mcm-section">
+        <div class="mcm-section-label"><i class="fa fa-calendar-range"></i> Rentang Tanggal (Opsional)</div>
+        <div class="mcm-grid2">
+          <div>
+            <label class="mcm-label">Tanggal Mulai</label>
+            <input type="date" id="mcm-tgl-dari" class="mcm-inp" onchange="mcmUpdatePreview();mcmClearChips()">
+          </div>
+          <div>
+            <label class="mcm-label">Tanggal Sampai</label>
+            <input type="date" id="mcm-tgl-sampai" class="mcm-inp" onchange="mcmUpdatePreview();mcmClearChips()">
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter: Jenis + Status -->
+      <div class="mcm-section">
+        <div class="mcm-section-label"><i class="fa fa-filter"></i> Filter Tambahan</div>
+        <div class="mcm-grid2">
+          <div>
+            <label class="mcm-label">Jenis Maintenance</label>
+            <select id="mcm-jenis" class="mcm-inp" onchange="mcmUpdatePreview()">
+              <option value="">Semua Jenis</option>
+              <?php foreach($jenis_opts as $j): ?>
+              <option value="<?= $j ?>"><?= $j ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div>
+            <label class="mcm-label">Status</label>
+            <select id="mcm-status" class="mcm-inp" onchange="mcmUpdatePreview()">
+              <option value="">Semua Status</option>
+              <option value="Selesai">✅ Selesai</option>
+              <option value="Dalam Proses">🔧 Dalam Proses</option>
+              <option value="Ditunda">⏸️ Ditunda</option>
+              <option value="Dibatalkan">❌ Dibatalkan</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mode laporan -->
+      <div class="mcm-section" style="margin-bottom:0;">
+        <div class="mcm-section-label"><i class="fa fa-file-pdf"></i> Mode Laporan</div>
+        <div class="mcm-report-opts">
+          <div class="mcm-report-opt selected" id="mcm-opt-semua" onclick="mcmPilihMode('semua')">
+            <div class="mcm-report-opt-icon" style="background:#eff6ff;">
+              <i class="fa fa-layer-group" style="color:#1d4ed8;"></i>
+            </div>
+            <div class="mcm-report-opt-title">Semua Jenis</div>
+            <div class="mcm-report-opt-sub">Laporan lengkap dikelompokkan per jenis maintenance</div>
+          </div>
+          <div class="mcm-report-opt" id="mcm-opt-jenis" onclick="mcmPilihMode('jenis')">
+            <div class="mcm-report-opt-icon" style="background:#faf5ff;">
+              <i class="fa fa-screwdriver-wrench" style="color:#7c3aed;"></i>
+            </div>
+            <div class="mcm-report-opt-title">Per Jenis Terpilih</div>
+            <div class="mcm-report-opt-sub">Hanya tampilkan jenis yang dipilih di filter atas</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview bar -->
+    <div class="mcm-preview-bar show" id="mcm-preview-bar">
+      <i class="fa fa-circle-info" style="color:#7c3aed;"></i>
+      <span id="mcm-preview-text">Laporan akan memuat semua data maintenance...</span>
+    </div>
+
+    <!-- Footer -->
+    <div class="mcm-foot">
+      <div style="font-size:10.5px;color:#94a3b8;">
+        <i class="fa fa-file-pdf" style="color:#ef4444;"></i>
+        PDF A4 Landscape — terbuka di tab baru
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button type="button" onclick="tutupModalCetakMnt()"
+          style="padding:7px 15px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;font-size:12px;cursor:pointer;color:#64748b;font-family:inherit;">
+          Batal
+        </button>
+        <button type="button" onclick="mcmCetak()"
+          style="padding:7px 18px;background:linear-gradient(135deg,#7c3aed,#6d28d9);border:none;border-radius:5px;font-size:12px;cursor:pointer;color:#fff;font-family:inherit;font-weight:700;">
+          <i class="fa fa-print"></i> Cetak PDF
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- ════ END MODAL CETAK MAINTENANCE ════ -->
+
+
+<!-- ═══════════════════════════════════════════════════
      MODAL TAMBAH / EDIT
-════════════════════════════════════════════════════════════════ -->
+═══════════════════════════════════════════════════ -->
 <div class="modal-ov" id="m-tambah-mnt" style="align-items:flex-start;justify-content:center;padding-top:24px;">
   <div style="background:#fff;width:100%;max-width:740px;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;animation:mIn .2s ease;">
-
     <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 20px;background:linear-gradient(135deg,#1a2e3f,#1b5c4a);">
       <div style="display:flex;align-items:center;gap:10px;">
         <div style="width:32px;height:32px;background:rgba(38,185,154,.25);border:1px solid rgba(38,185,154,.5);border-radius:7px;display:flex;align-items:center;justify-content:center;">
@@ -504,14 +656,10 @@ include '../includes/header.php';
       </div>
       <button onclick="tutupModalMnt()" style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.1);border:none;cursor:pointer;color:#ccc;font-size:13px;display:flex;align-items:center;justify-content:center;" onmouseover="this.style.background='#ef4444';this.style.color='#fff';" onmouseout="this.style.background='rgba(255,255,255,.1)';this.style.color='#ccc';"><i class="fa fa-times"></i></button>
     </div>
-
     <form method="POST" action="<?= APP_URL ?>/pages/maintenance_it.php" id="form-mnt">
       <input type="hidden" name="_action" id="fm-action" value="tambah">
       <input type="hidden" name="id"      id="fm-id"     value="">
-
       <div style="padding:18px 20px;max-height:74vh;overflow-y:auto;">
-
-        <!-- ① Pilih Aset -->
         <div style="margin-bottom:14px;">
           <label class="f-label"><i class="fa fa-server" style="color:#26B99A;"></i> Pilih Aset IT <span style="color:#ef4444;">*</span></label>
           <input type="hidden" name="aset_id" id="fm-aset_id" required>
@@ -534,8 +682,6 @@ include '../includes/header.php';
             </div>
           </div>
         </div>
-
-        <!-- ② Jenis + Status -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
           <div>
             <label class="f-label">Jenis Maintenance <span style="color:#ef4444;">*</span></label>
@@ -554,8 +700,6 @@ include '../includes/header.php';
             </select>
           </div>
         </div>
-
-        <!-- ③ Teknisi -->
         <div style="margin-bottom:12px;">
           <label class="f-label"><i class="fa fa-user-gear" style="color:#26B99A;"></i> Teknisi Pelaksana</label>
           <select name="teknisi_id" id="fm-teknisi_id" class="f-inp">
@@ -565,8 +709,6 @@ include '../includes/header.php';
             <?php endforeach; ?>
           </select>
         </div>
-
-        <!-- ④ Tanggal + Pengingat -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
           <div>
             <label class="f-label"><i class="fa fa-calendar" style="color:#26B99A;"></i> Tanggal Maintenance <span style="color:#ef4444;">*</span></label>
@@ -580,10 +722,7 @@ include '../includes/header.php';
             <input type="text" id="fm-berikut-display" class="f-inp" disabled style="background:#fffbeb;color:#78350f;font-weight:700;cursor:default;">
           </div>
         </div>
-
         <div class="grs-modal"></div>
-
-        <!-- ⑤ Kondisi -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
           <div>
             <label class="f-label">Kondisi Sebelum</label>
@@ -600,8 +739,6 @@ include '../includes/header.php';
             </select>
           </div>
         </div>
-
-        <!-- ⑥ Temuan + Tindakan -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
           <div>
             <label class="f-label">Temuan / Masalah</label>
@@ -612,8 +749,6 @@ include '../includes/header.php';
             <textarea name="tindakan" id="fm-tindakan" rows="3" class="f-inp" placeholder="Apa yang sudah dilakukan?" style="resize:vertical;"></textarea>
           </div>
         </div>
-
-        <!-- ⑦ Biaya + Keterangan -->
         <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;">
           <div>
             <label class="f-label">Biaya (Rp)</label>
@@ -624,17 +759,15 @@ include '../includes/header.php';
             <input type="text" name="keterangan" id="fm-keterangan" class="f-inp" placeholder="Catatan lain…">
           </div>
         </div>
-
-      </div><!-- /scroll -->
-
+      </div>
       <div style="padding:12px 20px;border-top:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;background:#f8fafc;">
         <div style="font-size:11px;color:#94a3b8;display:flex;align-items:center;gap:6px;">
           <i class="fa fa-circle-info" style="color:#26B99A;"></i>
           Pengingat berikutnya otomatis 3 bulan dari tanggal maintenance
         </div>
         <div style="display:flex;gap:8px;">
-          <button type="button" onclick="tutupModalMnt()" style="padding:7px 16px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;font-size:12px;cursor:pointer;color:#64748b;font-family:inherit;" onmouseover="this.style.background='#e2e8f0';" onmouseout="this.style.background='#f1f5f9';">Batal</button>
-          <button type="submit" style="padding:7px 18px;background:linear-gradient(135deg,#26B99A,#1a7a5e);border:none;border-radius:5px;font-size:12px;cursor:pointer;color:#fff;font-family:inherit;font-weight:700;" onmouseover="this.style.opacity='.85';" onmouseout="this.style.opacity='1';"><i class="fa fa-save"></i> <span id="fm-btn-label">Simpan Maintenance</span></button>
+          <button type="button" onclick="tutupModalMnt()" style="padding:7px 16px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;font-size:12px;cursor:pointer;color:#64748b;font-family:inherit;">Batal</button>
+          <button type="submit" style="padding:7px 18px;background:linear-gradient(135deg,#26B99A,#1a7a5e);border:none;border-radius:5px;font-size:12px;cursor:pointer;color:#fff;font-family:inherit;font-weight:700;"><i class="fa fa-save"></i> <span id="fm-btn-label">Simpan Maintenance</span></button>
         </div>
       </div>
     </form>
@@ -642,13 +775,11 @@ include '../includes/header.php';
 </div>
 
 
-<!-- ════════════════════════════════════════════════════════════
-     MODAL DETAIL — dengan tombol Cetak & Download
-════════════════════════════════════════════════════════════════ -->
+<!-- ═══════════════════════════════════════════════════
+     MODAL DETAIL
+═══════════════════════════════════════════════════ -->
 <div class="modal-ov" id="m-detail-mnt" style="align-items:flex-start;justify-content:center;padding-top:40px;">
   <div style="background:#fff;width:100%;max-width:600px;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;animation:mIn .2s ease;">
-
-    <!-- Header modal detail -->
     <div style="padding:14px 18px;background:linear-gradient(135deg,#1a2e3f,#2a3f54);display:flex;align-items:center;justify-content:space-between;">
       <div style="display:flex;align-items:center;gap:9px;">
         <i class="fa fa-clipboard-check" style="color:#26B99A;font-size:16px;"></i>
@@ -659,35 +790,21 @@ include '../includes/header.php';
       </div>
       <button onclick="closeModal('m-detail-mnt')" style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.1);border:none;cursor:pointer;color:#ccc;font-size:13px;display:flex;align-items:center;justify-content:center;" onmouseover="this.style.background='#ef4444';this.style.color='#fff';" onmouseout="this.style.background='rgba(255,255,255,.1)';this.style.color='#ccc';"><i class="fa fa-times"></i></button>
     </div>
-
-    <!-- Body -->
     <div id="detail-body" style="padding:18px 20px;max-height:65vh;overflow-y:auto;"></div>
-
-    <!-- Footer modal detail — tombol Tutup + Cetak + Download -->
     <div style="padding:11px 18px;border-top:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;background:#f8fafc;">
-      <button onclick="closeModal('m-detail-mnt')"
-        style="padding:6px 14px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;font-size:12px;cursor:pointer;color:#64748b;font-family:inherit;" onmouseover="this.style.background='#e2e8f0';" onmouseout="this.style.background='#f1f5f9';">
-        <i class="fa fa-times"></i> Tutup
-      </button>
+      <button onclick="closeModal('m-detail-mnt')" style="padding:6px 14px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;font-size:12px;cursor:pointer;color:#64748b;font-family:inherit;"><i class="fa fa-times"></i> Tutup</button>
       <div style="display:flex;gap:8px;">
-        <!-- Preview di tab baru -->
-        <a id="btn-preview-pdf" href="#" target="_blank" class="btn-cetak-outline">
-          <i class="fa fa-eye"></i> Preview PDF
-        </a>
-        <!-- Download langsung -->
-        <a id="btn-download-pdf" href="#" class="btn-cetak">
-          <i class="fa fa-print"></i> Cetak / Unduh Kartu
-        </a>
+        <a id="btn-preview-pdf" href="#" target="_blank" class="btn-cetak-outline"><i class="fa fa-eye"></i> Preview PDF</a>
+        <a id="btn-download-pdf" href="#" class="btn-cetak"><i class="fa fa-print"></i> Cetak / Unduh Kartu</a>
       </div>
     </div>
-
   </div>
 </div>
 
 
-<!-- ════════════════════════════════════════════════════════════
+<!-- ═══════════════════════════════════════════════════
      MODAL HAPUS
-════════════════════════════════════════════════════════════════ -->
+═══════════════════════════════════════════════════ -->
 <div class="modal-ov" id="m-hapus-mnt" style="align-items:center;justify-content:center;">
   <div style="background:#fff;width:100%;max-width:380px;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;animation:mIn .2s ease;">
     <div style="padding:20px 22px 14px;text-align:center;">
@@ -707,16 +824,15 @@ include '../includes/header.php';
 </div>
 
 
-<!-- ════════════════════════════════════════════════════════════
+<!-- ═══════════════════════════════════════════════════
      JAVASCRIPT
-════════════════════════════════════════════════════════════════ -->
+═══════════════════════════════════════════════════ -->
 <script>
 const APP_URL   = '<?= APP_URL ?>';
 let asetSearchTimer = null;
 let allAsetData = <?= json_encode($aset_list) ?>;
-let currentMntId = null; // track ID yang sedang dibuka di modal detail
 
-/* ── Tab navigation ───────────────────────────────────────── */
+/* ── Tab navigation ── */
 function gotoTab(tab) {
     const url = new URL(window.location.href);
     url.searchParams.set('tab', tab);
@@ -724,7 +840,7 @@ function gotoTab(tab) {
     window.location.href = url.toString();
 }
 
-/* ── Hitung +3 bulan ──────────────────────────────────────── */
+/* ── Hitung +3 bulan ── */
 function hitungBerikutnya(tgl) {
     if (!tgl) return;
     const d = new Date(tgl);
@@ -733,7 +849,7 @@ function hitungBerikutnya(tgl) {
         d.toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' });
 }
 
-/* ── Cari aset ────────────────────────────────────────────── */
+/* ── Cari aset ── */
 function cariAset(q) {
     clearTimeout(asetSearchTimer);
     const list = document.getElementById('aset-picker-list');
@@ -781,7 +897,6 @@ function pilihAset(id, noInv, nama, kat, merek, kondisi) {
     if (selSbl && kondisi) selSbl.value = kondisi;
 }
 
-/* ── Buka modal Tambah ────────────────────────────────────── */
 function bukaModalTambah(asetId) {
     resetFormMnt();
     openModal('m-tambah-mnt');
@@ -808,7 +923,6 @@ function pilihAsetById(id) {
     if (a.kondisi) document.getElementById('fm-kondisi_sbl').value = a.kondisi;
 }
 
-/* ── Edit ─────────────────────────────────────────────────── */
 function editMnt(id) {
     fetch(APP_URL + '/pages/maintenance_it.php?get_mnt=' + id)
         .then(r => r.json())
@@ -819,7 +933,6 @@ function editMnt(id) {
             document.getElementById('fm-btn-label').textContent    = 'Perbarui Data';
             document.getElementById('fm-action').value = 'edit';
             document.getElementById('fm-id').value     = d.id;
-
             document.getElementById('fm-aset_id').value = d.aset_id || '';
             if (d.aset_id) {
                 const a = allAsetData.find(x => x.id == d.aset_id);
@@ -848,16 +961,9 @@ function editMnt(id) {
         });
 }
 
-/* ── Lihat Detail ─────────────────────────────────────────── */
 function lihatDetail(id) {
-    currentMntId = id;
-
-    // Set URL tombol cetak
-    const urlPreview  = APP_URL + '/pages/cetak_maintenance.php?id=' + id + '&preview=1';
-    const urlDownload = APP_URL + '/pages/cetak_maintenance.php?id=' + id;
-    document.getElementById('btn-preview-pdf').href  = urlPreview;
-    document.getElementById('btn-download-pdf').href = urlDownload;
-
+    document.getElementById('btn-preview-pdf').href  = APP_URL + '/pages/cetak_maintenance.php?id=' + id + '&preview=1';
+    document.getElementById('btn-download-pdf').href = APP_URL + '/pages/cetak_maintenance.php?id=' + id;
     fetch(APP_URL + '/pages/maintenance_it.php?get_mnt=' + id)
         .then(r => r.json())
         .then(d => {
@@ -894,14 +1000,12 @@ function lihatDetail(id) {
         });
 }
 
-/* ── Hapus ────────────────────────────────────────────────── */
 function hapusMnt(id, no) {
-    document.getElementById('hapus-mnt-id').value         = id;
-    document.getElementById('hapus-mnt-no').textContent   = no;
+    document.getElementById('hapus-mnt-id').value       = id;
+    document.getElementById('hapus-mnt-no').textContent = no;
     openModal('m-hapus-mnt');
 }
 
-/* ── Reset & tutup modal ──────────────────────────────────── */
 function tutupModalMnt() {
     closeModal('m-tambah-mnt');
     resetFormMnt();
@@ -921,23 +1025,159 @@ function resetFormMnt() {
     hitungBerikutnya(document.getElementById('fm-tgl').value);
 }
 
-/* ── Util ─────────────────────────────────────────────────── */
 function escHtml(s) {
     if (!s) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function escJs(s) { return String(s||'').replace(/'/g,"\\'"); }
 
-// Tutup backdrop
 document.getElementById('m-tambah-mnt').addEventListener('click', function(e) {
     if (e.target === this) tutupModalMnt();
 });
 
-// Init
 hitungBerikutnya(document.getElementById('fm-tgl').value);
 document.getElementById('aset-search-inp').addEventListener('focus', function() {
     if (!document.querySelector('.aset-pick-item')) renderAsetList(allAsetData.slice(0, 20));
 });
+
+
+/* ═══════════════════════════════════════════════
+   MODAL CETAK LAPORAN MAINTENANCE
+═══════════════════════════════════════════════ */
+let mcmMode = 'semua';
+
+function bukaModalCetakMnt() {
+    document.getElementById('mcm-overlay').classList.add('open');
+    mcmUpdatePreview();
+}
+function tutupModalCetakMnt() {
+    document.getElementById('mcm-overlay').classList.remove('open');
+}
+
+/* Pilihan cepat periode */
+function mcmSetPeriod(type, el) {
+    document.querySelectorAll('.mcm-period-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+
+    const now = new Date();
+    let dari, sampai;
+
+    if (type === 'bulan_ini') {
+        dari   = new Date(now.getFullYear(), now.getMonth(), 1);
+        sampai = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    } else if (type === 'bulan_lalu') {
+        dari   = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        sampai = new Date(now.getFullYear(), now.getMonth(), 0);
+    } else if (type === '3_bulan') {
+        dari   = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+        sampai = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    } else if (type === '6_bulan') {
+        dari   = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+        sampai = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    } else if (type === 'tahun_ini') {
+        dari   = new Date(now.getFullYear(), 0, 1);
+        sampai = new Date(now.getFullYear(), 11, 31);
+    } else {
+        // Semua waktu — kosongkan field tanggal
+        document.getElementById('mcm-tgl-dari').value   = '';
+        document.getElementById('mcm-tgl-sampai').value = '';
+        mcmUpdatePreview();
+        return;
+    }
+
+    document.getElementById('mcm-tgl-dari').value   = mcmFmtDate(dari);
+    document.getElementById('mcm-tgl-sampai').value = mcmFmtDate(sampai);
+    mcmUpdatePreview();
+}
+
+function mcmClearChips() {
+    document.querySelectorAll('.mcm-period-chip').forEach(c => c.classList.remove('active'));
+}
+
+function mcmFmtDate(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+/* Pilih mode laporan */
+function mcmPilihMode(mode) {
+    mcmMode = mode;
+    document.getElementById('mcm-opt-semua').classList.toggle('selected', mode === 'semua');
+    document.getElementById('mcm-opt-jenis').classList.toggle('selected', mode === 'jenis');
+    const jenisSel = document.getElementById('mcm-jenis');
+    if (mode === 'jenis') {
+        jenisSel.style.borderColor = '#7c3aed';
+        jenisSel.style.boxShadow   = '0 0 0 3px rgba(124,58,237,.12)';
+        jenisSel.focus();
+    } else {
+        jenisSel.style.borderColor = '';
+        jenisSel.style.boxShadow   = '';
+    }
+    mcmUpdatePreview();
+}
+
+/* Update preview bar */
+function mcmUpdatePreview() {
+    const dari   = document.getElementById('mcm-tgl-dari').value;
+    const sampai = document.getElementById('mcm-tgl-sampai').value;
+    const jenis  = document.getElementById('mcm-jenis');
+    const status = document.getElementById('mcm-status');
+
+    const jenisLabel  = jenis.options[jenis.selectedIndex].text;
+    const statusLabel = status.options[status.selectedIndex].text;
+
+    let periodeStr = '<strong>Semua Periode</strong>';
+    if (dari && sampai) {
+        const diff = Math.round((new Date(sampai) - new Date(dari)) / 86400000) + 1;
+        periodeStr = `${dari} s.d. ${sampai} <strong>(${diff} hari)</strong>`;
+    } else if (dari) {
+        periodeStr = `Mulai <strong>${dari}</strong>`;
+    } else if (sampai) {
+        periodeStr = `S.d. <strong>${sampai}</strong>`;
+    }
+
+    const modeStr = (mcmMode === 'jenis' && jenis.value)
+        ? `Jenis: <strong>${jenisLabel}</strong>`
+        : `<strong>Semua Jenis</strong>`;
+
+    document.getElementById('mcm-preview-text').innerHTML =
+        `&#128197; Periode: ${periodeStr} &nbsp;|&nbsp; &#128295; ${modeStr} &nbsp;|&nbsp; Status: <strong>${statusLabel}</strong>`;
+    document.getElementById('mcm-preview-bar').classList.add('show');
+}
+
+/* Cetak PDF */
+function mcmCetak() {
+    const dari   = document.getElementById('mcm-tgl-dari').value;
+    const sampai = document.getElementById('mcm-tgl-sampai').value;
+    const jenis  = document.getElementById('mcm-jenis').value;
+    const status = document.getElementById('mcm-status').value;
+
+    if (mcmMode === 'jenis' && !jenis) {
+        alert('Mode "Per Jenis Terpilih" aktif.\nSilakan pilih jenis maintenance di dropdown, atau ubah mode ke "Semua Jenis".');
+        document.getElementById('mcm-jenis').focus();
+        return;
+    }
+    if (dari && sampai && new Date(dari) > new Date(sampai)) {
+        alert('Tanggal mulai tidak boleh lebih besar dari tanggal sampai.');
+        return;
+    }
+
+    let params = `mode=${encodeURIComponent(mcmMode)}`;
+    if (jenis)  params += `&jenis=${encodeURIComponent(jenis)}`;
+    if (status) params += `&status=${encodeURIComponent(status)}`;
+    if (dari)   params += `&tgl_dari=${encodeURIComponent(dari)}`;
+    if (sampai) params += `&tgl_sampai=${encodeURIComponent(sampai)}`;
+
+    window.open(`${APP_URL}/pages/cetak_laporan_maintenance.php?${params}`, '_blank');
+    tutupModalCetakMnt();
+}
+
+/* Tutup modal cetak dengan klik luar */
+document.getElementById('mcm-overlay').addEventListener('click', function(e) {
+    if (e.target === this) tutupModalCetakMnt();
+});
+
+/* Init */
+document.addEventListener('DOMContentLoaded', () => mcmUpdatePreview());
 </script>
 
 <?php include '../includes/footer.php'; ?>
