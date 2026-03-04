@@ -1,130 +1,181 @@
 <?php
+// pages/detail_tiket_ipsrs.php
 session_start();
 require_once '../config.php';
 requireLogin();
 
-$id = (int)($_GET['id']??0);
-if (!$id) { setFlash('danger','ID tidak valid.'); redirect(APP_URL.(hasRole('user')?'/pages/tiket_saya.php':'/pages/antrian.php')); }
+$id = (int)($_GET['id'] ?? 0);
+if (!$id) {
+    setFlash('danger','ID tidak valid.');
+    redirect(APP_URL.(hasRole('user') ? '/pages/tiket_saya_ipsrs.php' : '/pages/antrian_ipsrs.php'));
+}
 
-$st = $pdo->prepare("SELECT t.*,k.nama as kat_nama,k.sla_jam,k.sla_respon_jam,k.icon as kat_icon,
-    u.nama as req_nama,u.email as req_email,u.divisi as req_divisi,u.no_hp as req_hp,
-    tek.nama as tek_nama,tek.email as tek_email
-    FROM tiket t LEFT JOIN kategori k ON k.id=t.kategori_id
-    LEFT JOIN users u ON u.id=t.user_id LEFT JOIN users tek ON tek.id=t.teknisi_id
-    WHERE t.id=?");
-$st->execute([$id]); $t = $st->fetch();
+$st = $pdo->prepare("
+    SELECT t.*,
+           k.nama AS kat_nama, k.sla_jam, k.sla_respon_jam, k.icon AS kat_icon, k.jenis AS kat_jenis,
+           u.nama  AS req_nama,  u.email AS req_email,  u.divisi AS req_divisi, u.no_hp AS req_hp,
+           tek.nama AS tek_nama, tek.email AS tek_email,
+           a.nama_aset, a.no_inventaris AS aset_inv, a.merek AS aset_merek,
+           a.model_aset AS aset_model, a.kondisi AS aset_kondisi, a.serial_number AS aset_serial
+    FROM tiket_ipsrs t
+    LEFT JOIN kategori_ipsrs k ON k.id = t.kategori_id
+    LEFT JOIN users           u ON u.id = t.user_id
+    LEFT JOIN users         tek ON tek.id = t.teknisi_id
+    LEFT JOIN aset_ipsrs      a ON a.id = t.aset_id
+    WHERE t.id = ?
+");
+$st->execute([$id]);
+$t = $st->fetch();
+
 if (!$t) { setFlash('danger','Tiket tidak ditemukan.'); redirect(APP_URL.'/dashboard.php'); }
-if (hasRole('user') && $t['user_id'] != $_SESSION['user_id']) { setFlash('danger','Akses ditolak.'); redirect(APP_URL.'/pages/tiket_saya.php'); }
+if (hasRole('user') && $t['user_id'] != $_SESSION['user_id']) {
+    setFlash('danger','Akses ditolak.');
+    redirect(APP_URL.'/pages/tiket_saya_ipsrs.php');
+}
 
-$logs = $pdo->prepare("SELECT l.*,u.nama,u.role FROM tiket_log l LEFT JOIN users u ON u.id=l.user_id WHERE l.tiket_id=? ORDER BY l.created_at ASC");
+$logs = $pdo->prepare("
+    SELECT l.*, u.nama, u.role FROM tiket_ipsrs_log l
+    LEFT JOIN users u ON u.id = l.user_id
+    WHERE l.tiket_id = ? ORDER BY l.created_at ASC
+");
 $logs->execute([$id]); $logs = $logs->fetchAll();
 
-$komentar = $pdo->prepare("SELECT k.*,u.nama,u.role FROM komentar k LEFT JOIN users u ON u.id=k.user_id WHERE k.tiket_id=? ORDER BY k.created_at ASC");
+$komentar = $pdo->prepare("
+    SELECT k.*, u.nama, u.role FROM komentar_ipsrs k
+    LEFT JOIN users u ON u.id = k.user_id
+    WHERE k.tiket_id = ? ORDER BY k.created_at ASC
+");
 $komentar->execute([$id]); $komentar = $komentar->fetchAll();
 
-$teknisi_list = hasRole(['admin','teknisi']) ? $pdo->query("SELECT * FROM users WHERE role='teknisi' AND status='aktif' ORDER BY nama")->fetchAll() : [];
+$teknisi_list = hasRole(['admin','teknisi_ipsrs'])
+    ? $pdo->query("SELECT * FROM users WHERE role IN ('teknisi_ipsrs','admin') AND status='aktif' ORDER BY nama")->fetchAll()
+    : [];
 
-// ── HELPER: Upload foto bukti ─────────────────────────────────────────────────
-function uploadFotoBukti($pdo, $tiket_id, $user_id) {
-    // Cek apakah ada file yang dikirim
+// ── HELPER: Upload foto bukti IPSRS ──────────────────────────────────────────
+// Struktur identik dengan detail_tiket.php (IT) yang sudah terbukti bekerja
+function uploadFotoBuktiIpsrs($pdo, $tiket_id, $user_id) {
+    $log_file = dirname(dirname(__FILE__)) . '/upload_ipsrs_log.txt';
+    $log = function($msg) use ($log_file) {
+        file_put_contents($log_file, date('H:i:s') . ' ' . $msg . "\n", FILE_APPEND);
+    };
+
+    $log("=== uploadFotoBuktiIpsrs dipanggil, tiket_id=$tiket_id ===");
+    $log("FILES: " . json_encode($_FILES));
+
     if (!isset($_FILES['foto_bukti']) || empty($_FILES['foto_bukti']['name'][0])) {
+        $log("BERHENTI: FILES foto_bukti tidak ada atau kosong");
         return 0;
     }
 
-    // Path absolut ke fixsmart/uploads/tiket_foto/
-    // __FILE__ = /path/ke/fixsmart/pages/detail_tiket.php
-    // dirname(__FILE__)  = /path/ke/fixsmart/pages
-    // dirname(dirname(__FILE__)) = /path/ke/fixsmart
-    $root_dir  = dirname(dirname(__FILE__));
-    $upload_dir = $root_dir . '/uploads/tiket_foto/';
+    $root_dir   = dirname(dirname(__FILE__));
+    $upload_dir = $root_dir . '/uploads/tiket_ipsrs_foto/';
+    $log("upload_dir: $upload_dir");
+    $log("is_dir: " . (is_dir($upload_dir) ? 'YA' : 'TIDAK'));
+    $log("is_writable: " . (is_writable($upload_dir) ? 'YA' : 'TIDAK'));
 
-    // Buat folder jika belum ada
     if (!is_dir($upload_dir)) {
-        mkdir($upload_dir, 0755, true);
+        mkdir($upload_dir, 0777, true);
     }
-
-    // Pastikan folder bisa ditulis
     if (!is_writable($upload_dir)) {
+        $log("BERHENTI: folder tidak writable");
         return 0;
     }
 
     $allowed_ext  = array('jpg','jpeg','png','gif','webp');
     $allowed_mime = array('image/jpeg','image/png','image/gif','image/webp');
-    $max_size     = 5 * 1024 * 1024; // 5 MB
+    $max_size     = 5 * 1024 * 1024;
     $uploaded     = 0;
 
     foreach ($_FILES['foto_bukti']['tmp_name'] as $i => $tmp) {
-        // Skip jika ada error upload
-        if ($_FILES['foto_bukti']['error'][$i] !== UPLOAD_ERR_OK) continue;
-        // Skip jika ukuran melebihi batas
-        if ($_FILES['foto_bukti']['size'][$i] > $max_size) continue;
-        // Cek MIME type
-        $mime = mime_content_type($tmp);
-        if (!in_array($mime, $allowed_mime)) continue;
-        // Cek ekstensi
-        $ori = $_FILES['foto_bukti']['name'][$i];
-        $ext = strtolower(pathinfo($ori, PATHINFO_EXTENSION));
-        if (!in_array($ext, $allowed_ext)) continue;
+        $err  = $_FILES['foto_bukti']['error'][$i];
+        $size = $_FILES['foto_bukti']['size'][$i];
+        $ori  = $_FILES['foto_bukti']['name'][$i];
+        $log("File[$i]: name=$ori, size=$size, error=$err, tmp=$tmp");
 
-        // Nama file unik
-        $safe = 'tiket_' . $tiket_id . '_' . time() . '_' . $i . '.' . $ext;
+        if ($err !== UPLOAD_ERR_OK)  { $log("SKIP[$i]: error code $err"); continue; }
+        if ($size > $max_size)       { $log("SKIP[$i]: ukuran $size > 5MB"); continue; }
+
+        $mime = mime_content_type($tmp);
+        $log("File[$i] mime: $mime");
+        if (!in_array($mime, $allowed_mime)) { $log("SKIP[$i]: mime $mime tidak diizinkan"); continue; }
+
+        $ext = strtolower(pathinfo($ori, PATHINFO_EXTENSION));
+        if (!in_array($ext, $allowed_ext))   { $log("SKIP[$i]: ext $ext tidak diizinkan"); continue; }
+
+        $safe = 'ipsrs_' . $tiket_id . '_' . time() . '_' . $i . '.' . $ext;
         $dest = $upload_dir . $safe;
+        $log("Mencoba move_uploaded_file ke: $dest");
 
         if (move_uploaded_file($tmp, $dest)) {
-            // Path relatif dari root project disimpan ke DB
-            $pdo->prepare("INSERT INTO tiket_foto (tiket_id,user_id,nama_file,path) VALUES (?,?,?,?)")
-                ->execute(array($tiket_id, $user_id, $ori, 'uploads/tiket_foto/' . $safe));
+            $log("move_uploaded_file BERHASIL");
+            $path_db = 'uploads/tiket_ipsrs_foto/' . $safe;
+            try {
+                $pdo->prepare("INSERT INTO tiket_ipsrs_foto (tiket_id, user_id, nama_file, path) VALUES (?, ?, ?, ?)")
+                    ->execute(array($tiket_id, $user_id, $ori, $path_db));
+                $log("INSERT DB BERHASIL, last_id=" . $pdo->lastInsertId());
+            } catch (Exception $e) {
+                $log("INSERT DB GAGAL: " . $e->getMessage());
+            }
             $uploaded++;
+        } else {
+            $log("move_uploaded_file GAGAL untuk: $dest");
         }
     }
+
+    $log("Total uploaded: $uploaded");
     return $uploaded;
 }
 
-// ── HELPER: Notif Telegram ───────────────────────────────────────────────────
-function notifTelegram($pdo, $t, $event_key, $extra = array()) {
+// ── HELPER: Notif Telegram IPSRS ─────────────────────────────────────────────
+function notifTelegramIpsrs($pdo, $t, $event_key, $extra = array()) {
     $cfg = getSettings($pdo);
     if (($cfg['telegram_enabled'] ?? '0') !== '1') return;
     if (($cfg[$event_key]         ?? '0') !== '1') return;
+
     $emoji_prio = array('Rendah'=>'🟢','Sedang'=>'🟡','Tinggi'=>'🔴');
     $ep   = isset($emoji_prio[$t['prioritas']]) ? $emoji_prio[$t['prioritas']] : '⚪';
+    $jenis_icon = ($t['jenis_tiket'] === 'Medis') ? '🏥' : '🔧';
+
     $info = "📋 <b>No Tiket :</b> {$t['nomor']}\n"
           . "📌 <b>Judul    :</b> " . htmlspecialchars($t['judul'], ENT_QUOTES) . "\n"
-          . "🏷️ <b>Kategori :</b> " . htmlspecialchars(isset($t['kat_nama'])  ? $t['kat_nama']  : '-', ENT_QUOTES) . "\n"
+          . "{$jenis_icon} <b>Jenis    :</b> {$t['jenis_tiket']}\n"
+          . "🏷️ <b>Kategori :</b> " . htmlspecialchars(isset($t['kat_nama']) ? $t['kat_nama'] : '-', ENT_QUOTES) . "\n"
           . "{$ep} <b>Prioritas:</b> {$t['prioritas']}\n"
-          . "📍 <b>Lokasi   :</b> " . htmlspecialchars(isset($t['lokasi'])    ? $t['lokasi']    : '-', ENT_QUOTES) . "\n"
-          . "👤 <b>Pemohon  :</b> " . htmlspecialchars(isset($t['req_nama'])  ? $t['req_nama']  : '-', ENT_QUOTES) . "\n";
+          . "📍 <b>Lokasi   :</b> " . htmlspecialchars(isset($t['lokasi'])   ? $t['lokasi']   : '-', ENT_QUOTES) . "\n"
+          . "👤 <b>Pemohon  :</b> " . htmlspecialchars(isset($t['req_nama']) ? $t['req_nama'] : '-', ENT_QUOTES) . "\n";
+
     $msg = '';
     switch ($event_key) {
         case 'telegram_notif_diproses':
-            $msg = "⚙️ <b>Tiket Mulai Diproses — FixSmart Helpdesk</b>\n\n" . $info
+            $msg = "⚙️ <b>Tiket IPSRS Mulai Diproses — FixSmart</b>\n\n" . $info
                  . "🔧 <b>Teknisi  :</b> " . htmlspecialchars(isset($extra['teknisi']) ? $extra['teknisi'] : '-', ENT_QUOTES) . "\n"
-                 . "🕐 <b>Waktu    :</b> " . date('d/m/Y H:i:s') . "\n\n<i>Tiket sedang dalam penanganan teknisi.</i>";
+                 . "🕐 <b>Waktu    :</b> " . date('d/m/Y H:i:s') . "\n\n<i>Tiket sedang dalam penanganan teknisi IPSRS.</i>";
             break;
         case 'telegram_notif_selesai':
             $catatan = isset($extra['catatan']) ? $extra['catatan'] : '';
-            $msg = "✅ <b>Tiket Selesai Ditangani — FixSmart Helpdesk</b>\n\n" . $info
+            $msg = "✅ <b>Tiket IPSRS Selesai — FixSmart</b>\n\n" . $info
                  . "🔧 <b>Teknisi  :</b> " . htmlspecialchars(isset($extra['teknisi']) ? $extra['teknisi'] : '-', ENT_QUOTES) . "\n"
                  . "🕐 <b>Waktu    :</b> " . date('d/m/Y H:i:s') . "\n"
                  . ($catatan ? "📝 <b>Catatan  :</b> " . htmlspecialchars(mb_substr($catatan,0,200,'UTF-8'), ENT_QUOTES) . "\n" : '')
-                 . "\n<i>Tiket telah berhasil diselesaikan.</i>";
+                 . "\n<i>Tiket IPSRS telah berhasil diselesaikan.</i>";
             break;
         case 'telegram_notif_ditolak':
-            $status_label = isset($extra['status_label']) ? $extra['status_label'] : 'Ditolak';
-            $catatan      = isset($extra['catatan'])       ? $extra['catatan']      : '';
-            $msg = "❌ <b>Tiket {$status_label} — FixSmart Helpdesk</b>\n\n" . $info
+            $sl      = isset($extra['status_label']) ? $extra['status_label'] : 'Ditolak';
+            $catatan = isset($extra['catatan'])       ? $extra['catatan']       : '';
+            $msg = "❌ <b>Tiket IPSRS {$sl} — FixSmart</b>\n\n" . $info
                  . "🔧 <b>Diproses :</b> " . htmlspecialchars(isset($extra['teknisi']) ? $extra['teknisi'] : '-', ENT_QUOTES) . "\n"
                  . "🕐 <b>Waktu    :</b> " . date('d/m/Y H:i:s') . "\n"
                  . ($catatan ? "📝 <b>Alasan   :</b> " . htmlspecialchars(mb_substr($catatan,0,200,'UTF-8'), ENT_QUOTES) . "\n" : '')
-                 . "\n<i>Tiket tidak dapat dilanjutkan.</i>";
+                 . "\n<i>Tiket IPSRS tidak dapat dilanjutkan.</i>";
             break;
         case 'telegram_notif_komentar':
             $isi_km = isset($extra['komentar']) ? $extra['komentar'] : '';
-            $msg = "💬 <b>Komentar Baru di Tiket — FixSmart Helpdesk</b>\n\n" . $info
-                 . "✍️ <b>Komentar dari:</b> " . htmlspecialchars(isset($extra['pengirim']) ? $extra['pengirim'] : '-', ENT_QUOTES) . "\n"
+            $msg = "💬 <b>Komentar Baru — Tiket IPSRS FixSmart</b>\n\n" . $info
+                 . "✍️ <b>Dari     :</b> " . htmlspecialchars(isset($extra['pengirim']) ? $extra['pengirim'] : '-', ENT_QUOTES) . "\n"
                  . "🕐 <b>Waktu    :</b> " . date('d/m/Y H:i:s') . "\n\n"
                  . "💬 <b>Isi Komentar:</b>\n"
                  . htmlspecialchars(mb_substr($isi_km,0,300,'UTF-8').(mb_strlen($isi_km,'UTF-8')>300?'...':''), ENT_QUOTES)
-                 . "\n\n<i>Cek dashboard untuk membalas komentar.</i>";
+                 . "\n\n<i>Cek dashboard untuk membalas.</i>";
             break;
         default: return;
     }
@@ -136,120 +187,130 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $act      = isset($_POST['action']) ? $_POST['action'] : '';
     $is_final = in_array($t['status'], array('selesai','ditolak','tidak_bisa'));
 
-    // Ambil/Proses tiket
-    if ($act === 'ambil' && hasRole(array('admin','teknisi')) && $t['status'] === 'menunggu') {
-        $tek_id = $_SESSION['user_id'];
-        $pdo->prepare("UPDATE tiket SET status='diproses',teknisi_id=?,waktu_diproses=NOW(),
-            durasi_respon_menit=TIMESTAMPDIFF(MINUTE,waktu_submit,NOW()) WHERE id=?")->execute(array($tek_id,$id));
-        $pdo->prepare("INSERT INTO tiket_log (tiket_id,user_id,status_dari,status_ke,keterangan) VALUES (?,?,'menunggu','diproses',?)")
-            ->execute(array($id,$_SESSION['user_id'],'Tiket diambil dan mulai diproses oleh '.$_SESSION['user_nama']));
-        notifTelegram($pdo, $t, 'telegram_notif_diproses', array('teknisi' => $_SESSION['user_nama']));
-        setFlash('success','Tiket berhasil diambil. Selamat mengerjakan!');
-        redirect(APP_URL.'/pages/detail_tiket.php?id='.$id);
+    // Ambil & Proses
+    if ($act === 'ambil' && hasRole(array('admin','teknisi_ipsrs')) && $t['status'] === 'menunggu') {
+        $pdo->prepare("UPDATE tiket_ipsrs SET status='diproses', teknisi_id=?, waktu_proses=NOW(),
+            durasi_respon_menit=TIMESTAMPDIFF(MINUTE,waktu_submit,NOW()) WHERE id=?")
+            ->execute(array($_SESSION['user_id'], $id));
+        $pdo->prepare("INSERT INTO tiket_ipsrs_log (tiket_id,user_id,status_dari,status_ke,keterangan)
+            VALUES (?,?,'menunggu','diproses',?)")
+            ->execute(array($id, $_SESSION['user_id'], 'Tiket diambil dan mulai diproses oleh '.$_SESSION['user_nama']));
+        notifTelegramIpsrs($pdo, $t, 'telegram_notif_diproses', array('teknisi' => $_SESSION['user_nama']));
+        setFlash('success','Tiket IPSRS berhasil diambil. Selamat mengerjakan!');
+        redirect(APP_URL.'/pages/detail_tiket_ipsrs.php?id='.$id);
     }
 
-    // Update status + upload foto sekaligus
-    if ($act === 'update_status' && hasRole(array('admin','teknisi')) && !$is_final) {
+    // Update Status + Upload Foto
+    if ($act === 'update_status' && hasRole(array('admin','teknisi_ipsrs')) && !$is_final) {
         $new_status = isset($_POST['status_baru']) ? $_POST['status_baru'] : '';
-        $catatan    = trim(isset($_POST['catatan_penolakan']) ? $_POST['catatan_penolakan'] : '');
+        $catatan    = trim(isset($_POST['catatan_teknisi']) ? $_POST['catatan_teknisi'] : '');
         $valid      = array('selesai','ditolak','tidak_bisa');
         if (in_array($new_status, $valid)) {
-            $jml_foto = uploadFotoBukti($pdo, $id, $_SESSION['user_id']);
-            $pdo->prepare("UPDATE tiket SET
-                    status=?,
-                    catatan_penolakan=?,
+            $jml_foto = uploadFotoBuktiIpsrs($pdo, $id, $_SESSION['user_id']);
+            $pdo->prepare("UPDATE tiket_ipsrs SET
+                    status=?, catatan_teknisi=?,
                     waktu_selesai=NOW(),
                     durasi_selesai_menit=TIMESTAMPDIFF(MINUTE,waktu_submit,NOW()),
                     teknisi_id=COALESCE(teknisi_id,?),
-                    waktu_diproses=COALESCE(waktu_diproses,NOW()),
+                    waktu_proses=COALESCE(waktu_proses,NOW()),
                     durasi_respon_menit=COALESCE(durasi_respon_menit,TIMESTAMPDIFF(MINUTE,waktu_submit,NOW()))
                 WHERE id=?")
                 ->execute(array($new_status, $catatan ? $catatan : null, $_SESSION['user_id'], $id));
 
             $ket_foto = $jml_foto ? " ($jml_foto foto bukti diupload)" : '';
             if ($new_status === 'selesai') {
-                $ket = 'Tiket selesai ditangani.' . $ket_foto;
+                $ket = 'Tiket IPSRS selesai ditangani.' . $ket_foto;
             } elseif ($new_status === 'ditolak') {
                 $ket = 'Tiket ditolak. Alasan: ' . $catatan . $ket_foto;
             } else {
                 $ket = 'Tidak dapat ditangani. Keterangan: ' . $catatan . $ket_foto;
             }
-            $pdo->prepare("INSERT INTO tiket_log (tiket_id,user_id,status_dari,status_ke,keterangan) VALUES (?,?,?,?,?)")
+            $pdo->prepare("INSERT INTO tiket_ipsrs_log (tiket_id,user_id,status_dari,status_ke,keterangan)
+                VALUES (?,?,?,?,?)")
                 ->execute(array($id, $_SESSION['user_id'], $t['status'], $new_status, $ket));
 
             $tek_nama = $t['tek_nama'] ? $t['tek_nama'] : $_SESSION['user_nama'];
             if ($new_status === 'selesai') {
-                notifTelegram($pdo, $t, 'telegram_notif_selesai', array('teknisi'=>$tek_nama,'catatan'=>$catatan));
+                notifTelegramIpsrs($pdo, $t, 'telegram_notif_selesai', array('teknisi'=>$tek_nama,'catatan'=>$catatan));
             } else {
                 $sl = ($new_status === 'ditolak') ? 'Ditolak' : 'Tidak Bisa Ditangani';
-                notifTelegram($pdo, $t, 'telegram_notif_ditolak', array('teknisi'=>$tek_nama,'catatan'=>$catatan,'status_label'=>$sl));
+                notifTelegramIpsrs($pdo, $t, 'telegram_notif_ditolak', array('teknisi'=>$tek_nama,'catatan'=>$catatan,'status_label'=>$sl));
             }
             $msg_foto = $jml_foto ? " $jml_foto foto bukti berhasil diupload." : '';
             setFlash('success', 'Status tiket berhasil diperbarui.' . $msg_foto);
-            redirect(APP_URL.'/pages/detail_tiket.php?id='.$id);
+            redirect(APP_URL.'/pages/detail_tiket_ipsrs.php?id='.$id);
         }
     }
 
-    // Upload foto saja (tanpa ubah status)
-    if ($act === 'upload_foto' && hasRole(array('admin','teknisi')) && !$is_final) {
-        $jml_foto = uploadFotoBukti($pdo, $id, $_SESSION['user_id']);
+    // Upload Foto Saja
+    if ($act === 'upload_foto' && hasRole(array('admin','teknisi_ipsrs')) && !$is_final) {
+        $jml_foto = uploadFotoBuktiIpsrs($pdo, $id, $_SESSION['user_id']);
         if ($jml_foto > 0) {
-            $pdo->prepare("INSERT INTO tiket_log (tiket_id,user_id,status_dari,status_ke,keterangan) VALUES (?,?,?,?,?)")
+            $pdo->prepare("INSERT INTO tiket_ipsrs_log (tiket_id,user_id,status_dari,status_ke,keterangan)
+                VALUES (?,?,?,?,?)")
                 ->execute(array($id, $_SESSION['user_id'], $t['status'], $t['status'], "Upload $jml_foto foto bukti pengerjaan."));
             setFlash('success', "$jml_foto foto berhasil diupload.");
         } else {
             setFlash('warning', 'Tidak ada foto berhasil diupload. Pastikan format JPG/PNG/WebP dan ukuran maks 5 MB per file.');
         }
-        redirect(APP_URL.'/pages/detail_tiket.php?id='.$id.'#t-aksi');
+        redirect(APP_URL.'/pages/detail_tiket_ipsrs.php?id='.$id.'#t-aksi');
     }
 
-    // Hapus foto
-    if ($act === 'hapus_foto' && hasRole(array('admin','teknisi'))) {
+    // Hapus Foto
+    if ($act === 'hapus_foto' && hasRole(array('admin','teknisi_ipsrs'))) {
         $foto_id  = (int)(isset($_POST['foto_id']) ? $_POST['foto_id'] : 0);
-        $foto_row = $pdo->prepare("SELECT * FROM tiket_foto WHERE id=? AND tiket_id=?");
+        $foto_row = $pdo->prepare("SELECT * FROM tiket_ipsrs_foto WHERE id=? AND tiket_id=?");
         $foto_row->execute(array($foto_id, $id));
         $foto_row = $foto_row->fetch();
         if ($foto_row) {
             $root_dir = dirname(dirname(__FILE__));
             $full     = $root_dir . '/' . $foto_row['path'];
             if (file_exists($full)) unlink($full);
-            $pdo->prepare("DELETE FROM tiket_foto WHERE id=?")->execute(array($foto_id));
+            $pdo->prepare("DELETE FROM tiket_ipsrs_foto WHERE id=?")->execute(array($foto_id));
             setFlash('success', 'Foto berhasil dihapus.');
         }
-        redirect(APP_URL.'/pages/detail_tiket.php?id='.$id.'#t-aksi');
+        redirect(APP_URL.'/pages/detail_tiket_ipsrs.php?id='.$id.'#t-aksi');
     }
 
-    // Assign teknisi
-    if ($act === 'assign' && hasRole(array('admin','teknisi'))) {
+    // Assign Teknisi
+    if ($act === 'assign' && hasRole(array('admin','teknisi_ipsrs'))) {
         $tek_id = (int)(isset($_POST['teknisi_id']) ? $_POST['teknisi_id'] : 0);
         $tek_id = $tek_id ? $tek_id : null;
-        $pdo->prepare("UPDATE tiket SET teknisi_id=? WHERE id=?")->execute(array($tek_id, $id));
+        $pdo->prepare("UPDATE tiket_ipsrs SET teknisi_id=? WHERE id=?")->execute(array($tek_id, $id));
         $st2 = $pdo->prepare("SELECT nama FROM users WHERE id=?");
         $st2->execute(array($tek_id ? $tek_id : 0));
         $tn = $tek_id ? ($st2->fetchColumn() ?: 'Teknisi') : 'Tidak ada';
-        $pdo->prepare("INSERT INTO tiket_log (tiket_id,user_id,status_dari,status_ke,keterangan) VALUES (?,?,?,?,?)")
+        $pdo->prepare("INSERT INTO tiket_ipsrs_log (tiket_id,user_id,status_dari,status_ke,keterangan)
+            VALUES (?,?,?,?,?)")
             ->execute(array($id, $_SESSION['user_id'], $t['status'], $t['status'], 'Tiket di-assign ke: '.$tn));
         setFlash('success', 'Teknisi berhasil di-assign.');
-        redirect(APP_URL.'/pages/detail_tiket.php?id='.$id);
+        redirect(APP_URL.'/pages/detail_tiket_ipsrs.php?id='.$id);
     }
 
     // Komentar
     if ($act === 'komentar') {
         $isi = trim(isset($_POST['isi']) ? $_POST['isi'] : '');
         if ($isi) {
-            $pdo->prepare("INSERT INTO komentar (tiket_id,user_id,isi) VALUES (?,?,?)")->execute(array($id, $_SESSION['user_id'], $isi));
-            $pdo->prepare("INSERT INTO tiket_log (tiket_id,user_id,status_dari,status_ke,keterangan) VALUES (?,?,?,?,?)")
+            $pdo->prepare("INSERT INTO komentar_ipsrs (tiket_id,user_id,isi) VALUES (?,?,?)")
+                ->execute(array($id, $_SESSION['user_id'], $isi));
+            $pdo->prepare("INSERT INTO tiket_ipsrs_log (tiket_id,user_id,status_dari,status_ke,keterangan)
+                VALUES (?,?,?,?,?)")
                 ->execute(array($id, $_SESSION['user_id'], $t['status'], $t['status'], 'Komentar: '.substr($isi,0,80)));
-            notifTelegram($pdo, $t, 'telegram_notif_komentar', array('pengirim'=>$_SESSION['user_nama'],'komentar'=>$isi));
+            notifTelegramIpsrs($pdo, $t, 'telegram_notif_komentar', array('pengirim'=>$_SESSION['user_nama'],'komentar'=>$isi));
             setFlash('success', 'Komentar berhasil dikirim.');
         }
-        redirect(APP_URL.'/pages/detail_tiket.php?id='.$id.'#diskusi');
+        redirect(APP_URL.'/pages/detail_tiket_ipsrs.php?id='.$id.'#diskusi');
     }
 }
 
-// ── Refresh tiket & foto setelah POST ────────────────────────────────────────
+// ── Refresh data setelah POST ─────────────────────────────────────────────────
 $st->execute(array($id)); $t = $st->fetch();
-$fotos_q = $pdo->prepare("SELECT f.*,u.nama as uploader FROM tiket_foto f LEFT JOIN users u ON u.id=f.user_id WHERE f.tiket_id=? ORDER BY f.created_at ASC");
+
+$fotos_q = $pdo->prepare("
+    SELECT f.*, u.nama AS uploader FROM tiket_ipsrs_foto f
+    LEFT JOIN users u ON u.id = f.user_id
+    WHERE f.tiket_id = ? ORDER BY f.created_at ASC
+");
 $fotos_q->execute(array($id)); $fotos = $fotos_q->fetchAll();
 
 $is_final    = in_array($t['status'], array('selesai','ditolak','tidak_bisa'));
@@ -269,13 +330,15 @@ foreach ($fotos as $f) {
     );
 }
 
-$page_title  = 'Detail Tiket ' . $t['nomor'];
-$active_menu = hasRole('user') ? 'tiket_saya' : 'semua_tiket';
-$back_url    = hasRole('user') ? APP_URL.'/pages/tiket_saya.php' : APP_URL.'/pages/semua_tiket.php';
+$is_medis    = ($t['jenis_tiket'] === 'Medis');
+$page_title  = 'Detail Tiket IPSRS ' . $t['nomor'];
+$active_menu = hasRole('user') ? 'tiket_saya_ipsrs' : 'semua_tiket_ipsrs';
+$back_url    = hasRole('user') ? APP_URL.'/pages/tiket_saya_ipsrs.php' : APP_URL.'/pages/semua_tiket_ipsrs.php';
 
 include '../includes/header.php';
 ?>
 <style>
+/* ── Foto grid & lightbox ──────────────────────────────── */
 .foto-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;}
 .foto-item{position:relative;width:90px;height:90px;border-radius:8px;overflow:hidden;border:2px solid #e5e7eb;cursor:pointer;transition:transform .15s,border-color .15s,box-shadow .15s;}
 .foto-item:hover{transform:scale(1.04);border-color:var(--primary,#3b82f6);box-shadow:0 4px 12px rgba(59,130,246,.2);}
@@ -302,13 +365,24 @@ include '../includes/header.php';
 .foto-section{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:18px;}
 .foto-section-title{font-size:12px;font-weight:700;color:#334155;display:flex;align-items:center;gap:6px;margin-bottom:4px;}
 .foto-count-badge{background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;padding:1px 8px;border-radius:20px;}
+/* ── Kartu Aset IPSRS ──────────────────────────────────── */
+.aset-card{background:linear-gradient(135deg,#f0fdf9,#ecfdf5);border:1.5px solid #86efac;border-radius:9px;padding:12px 14px;display:flex;align-items:flex-start;gap:11px;margin-top:8px;}
+.aset-card-ic{width:38px;height:38px;border-radius:8px;background:#15803d;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.aset-card-body{flex:1;min-width:0;}
+.aset-card-nama{font-size:13px;font-weight:700;color:#1e293b;}
+.aset-card-inv{display:inline-block;font-family:'Courier New',monospace;font-size:10.5px;font-weight:700;background:#dcfce7;color:#15803d;border:1px solid #86efac;padding:1px 7px;border-radius:4px;margin-top:3px;}
+.aset-card-meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:7px;font-size:11px;color:#64748b;}
+.aset-card-meta i{color:#26B99A;font-size:10px;}
+/* ── Jenis badge ───────────────────────────────────────── */
+.badge-medis   {display:inline-flex;align-items:center;gap:3px;padding:2px 9px;border-radius:10px;font-size:10.5px;font-weight:700;background:#fce7f3;color:#9d174d;}
+.badge-nonmedis{display:inline-flex;align-items:center;gap:3px;padding:2px 9px;border-radius:10px;font-size:10.5px;font-weight:700;background:#dbeafe;color:#1e40af;}
 </style>
 
 <div class="page-header">
-  <h4><i class="fa fa-ticket-alt text-primary"></i> &nbsp;Detail Tiket</h4>
+  <h4><i class="fa fa-ticket-alt" style="color:var(--primary);"></i> &nbsp;Detail Tiket IPSRS</h4>
   <div class="breadcrumb">
     <a href="<?= APP_URL ?>/dashboard.php">Beranda</a><span class="sep">/</span>
-    <a href="<?= $back_url ?>">Tiket</a><span class="sep">/</span>
+    <a href="<?= $back_url ?>">Tiket IPSRS</a><span class="sep">/</span>
     <span class="cur"><?= clean($t['nomor']) ?></span>
   </div>
 </div>
@@ -316,14 +390,20 @@ include '../includes/header.php';
 <div class="content">
   <?= showFlash() ?>
 
+  <!-- Header panel tiket -->
   <div class="panel" style="border-left:5px solid <?= isset($border_color[$t['status']]) ? $border_color[$t['status']] : 'var(--primary)' ?>;">
     <div class="panel-bd">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;">
         <div style="flex:1;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap;">
-            <span style="font-size:13px;font-weight:700;color:var(--primary);"><?= clean($t['nomor']) ?></span>
+            <span style="font-size:13px;font-weight:700;color:var(--primary);font-family:monospace;"><?= clean($t['nomor']) ?></span>
             <?= badgeStatus($t['status']) ?>
             <?= badgePrioritas($t['prioritas']) ?>
+            <?php if ($is_medis): ?>
+            <span class="badge-medis"><i class="fa fa-kit-medical" style="font-size:9px;"></i> Medis</span>
+            <?php else: ?>
+            <span class="badge-nonmedis"><i class="fa fa-screwdriver-wrench" style="font-size:9px;"></i> Non-Medis</span>
+            <?php endif; ?>
             <?php if (count($fotos)): ?>
             <span style="background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;">
               <i class="fa fa-images"></i> <?= count($fotos) ?> foto
@@ -334,15 +414,18 @@ include '../includes/header.php';
           <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#aaa;">
             <span><i class="fa fa-tag"></i> <?= clean(isset($t['kat_nama']) ? $t['kat_nama'] : '-') ?></span>
             <span><i class="fa fa-map-marker-alt"></i> <?= clean(isset($t['lokasi']) ? $t['lokasi'] : '-') ?></span>
-            <span><i class="fa fa-clock"></i> <?= formatTanggal($t['waktu_submit'],true) ?></span>
+            <span><i class="fa fa-clock"></i> <?= formatTanggal($t['waktu_submit'], true) ?></span>
+            <?php if ($t['nama_aset']): ?>
+            <span style="color:#26B99A;"><i class="fa fa-toolbox"></i> <?= clean($t['nama_aset']) ?> (<?= clean($t['aset_inv']) ?>)</span>
+            <?php endif; ?>
           </div>
         </div>
         <div style="display:flex;gap:7px;flex-shrink:0;">
           <a href="<?= $back_url ?>" class="btn btn-default btn-sm"><i class="fa fa-arrow-left"></i> Kembali</a>
-          <?php if (!$is_final && hasRole(array('admin','teknisi')) && $t['status']==='menunggu'): ?>
+          <?php if (!$is_final && hasRole(array('admin','teknisi_ipsrs')) && $t['status'] === 'menunggu'): ?>
           <form method="POST" style="display:inline;">
             <input type="hidden" name="action" value="ambil">
-            <button type="submit" class="btn btn-primary btn-sm"><i class="fa fa-hand-pointer"></i> Ambil & Proses</button>
+            <button type="submit" class="btn btn-primary btn-sm"><i class="fa fa-hand-pointer"></i> Ambil &amp; Proses</button>
           </form>
           <?php endif; ?>
         </div>
@@ -351,14 +434,15 @@ include '../includes/header.php';
   </div>
 
   <div class="g3">
+    <!-- ══ Kolom Kiri (tab) ══ -->
     <div>
       <div class="panel">
         <div class="panel-hd" style="padding:0 15px;">
           <div class="tabs" style="margin:0;">
             <button class="tab-btn active" onclick="switchTab(this,'t-info')">Detail</button>
             <button class="tab-btn" onclick="switchTab(this,'t-diskusi')">Diskusi (<?= count($komentar) ?>)</button>
-            <?php if (hasRole(array('admin','teknisi')) && !$is_final): ?>
-            <button class="tab-btn" onclick="switchTab(this,'t-aksi')" id="btn-tab-aksi">Tindakan IT</button>
+            <?php if (hasRole(array('admin','teknisi_ipsrs')) && !$is_final): ?>
+            <button class="tab-btn" onclick="switchTab(this,'t-aksi')" id="btn-tab-aksi">Tindakan IPSRS</button>
             <?php elseif ($is_final && count($fotos)): ?>
             <button class="tab-btn" onclick="switchTab(this,'t-foto-view')">Foto Bukti (<?= count($fotos) ?>)</button>
             <?php endif; ?>
@@ -366,8 +450,10 @@ include '../includes/header.php';
         </div>
         <div class="panel-bd">
 
-          <!-- TAB DETAIL -->
+          <!-- ── TAB DETAIL ── -->
           <div id="t-info" class="tab-c active">
+
+            <!-- Pemohon & Teknisi -->
             <div class="form-row" style="margin-bottom:14px;">
               <div>
                 <div style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:5px;">Pemohon</div>
@@ -381,7 +467,7 @@ include '../includes/header.php';
                 </div>
               </div>
               <div>
-                <div style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:5px;">Teknisi</div>
+                <div style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:5px;">Teknisi IPSRS</div>
                 <?php if ($t['tek_nama']): ?>
                 <div class="d-flex ai-c gap10">
                   <div class="av av-md av-blue"><?= getInitials($t['tek_nama']) ?></div>
@@ -392,22 +478,59 @@ include '../includes/header.php';
                 </div>
                 <?php else: ?>
                 <span style="font-size:12px;color:#aaa;font-style:italic;">Belum ditugaskan</span>
-                <?php if (hasRole(array('admin','teknisi')) && !$is_final): ?>
+                <?php if (hasRole(array('admin','teknisi_ipsrs')) && !$is_final): ?>
                 <br><button class="btn btn-default btn-sm" onclick="document.getElementById('btn-tab-aksi').click()" style="margin-top:6px;"><i class="fa fa-user-plus"></i> Assign Teknisi</button>
                 <?php endif; ?>
                 <?php endif; ?>
               </div>
             </div>
+
             <hr class="divider">
-            <div style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:6px;">Deskripsi Masalah</div>
+
+            <!-- Aset IPSRS terkait -->
+            <?php if ($t['nama_aset']): ?>
+            <div style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:6px;">
+              <i class="fa fa-toolbox" style="color:var(--primary);"></i> Aset / Peralatan Terkait
+            </div>
+            <div class="aset-card">
+              <div class="aset-card-ic">
+                <i class="fa fa-toolbox" style="color:#fff;font-size:15px;"></i>
+              </div>
+              <div class="aset-card-body">
+                <div class="aset-card-nama"><?= clean($t['nama_aset']) ?></div>
+                <div class="aset-card-inv"><?= clean($t['aset_inv']) ?></div>
+                <div class="aset-card-meta">
+                  <?php if ($t['aset_merek'] || $t['aset_model']): ?>
+                  <span><i class="fa fa-tag"></i> <?= clean(implode(' · ', array_filter(array($t['aset_merek'],$t['aset_model'])))) ?></span>
+                  <?php endif; ?>
+                  <?php if ($t['aset_serial']): ?>
+                  <span><i class="fa fa-barcode"></i> <span style="font-family:monospace;"><?= clean($t['aset_serial']) ?></span></span>
+                  <?php endif; ?>
+                  <?php if ($t['aset_kondisi']): ?>
+                  <span><i class="fa fa-circle-half-stroke"></i>
+                    <span style="font-weight:700;color:<?= $t['aset_kondisi']==='Baik'?'#15803d':'#92400e' ?>;"><?= clean($t['aset_kondisi']) ?></span>
+                  </span>
+                  <?php endif; ?>
+                </div>
+              </div>
+            </div>
+            <hr class="divider">
+            <?php endif; ?>
+
+            <!-- Deskripsi -->
+            <div style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:6px;">Deskripsi Masalah / Permintaan</div>
             <p style="font-size:13px;color:#444;line-height:1.8;white-space:pre-line;"><?= clean($t['deskripsi']) ?></p>
-            <?php if ($t['catatan_penolakan']): ?>
+
+            <!-- Catatan penolakan / keterangan -->
+            <?php if ($t['catatan_teknisi']): ?>
             <hr class="divider">
             <div style="background:#fff8f8;border:1px solid #fca5a5;border-radius:4px;padding:10px 12px;">
-              <div style="font-size:11px;font-weight:700;color:#991b1b;margin-bottom:4px;"><i class="fa fa-info-circle"></i> Keterangan IT</div>
-              <p style="font-size:12px;color:#555;line-height:1.7;"><?= clean($t['catatan_penolakan']) ?></p>
+              <div style="font-size:11px;font-weight:700;color:#991b1b;margin-bottom:4px;"><i class="fa fa-info-circle"></i> Keterangan IPSRS</div>
+              <p style="font-size:12px;color:#555;line-height:1.7;"><?= clean($t['catatan_teknisi']) ?></p>
             </div>
             <?php endif; ?>
+
+            <!-- Foto bukti (view di tab detail) -->
             <?php if (count($fotos)): ?>
             <hr class="divider">
             <div style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;margin-bottom:8px;">
@@ -425,18 +548,25 @@ include '../includes/header.php';
             </div>
             <?php endif; ?>
           </div>
+          <!-- ── END TAB DETAIL ── -->
 
-          <!-- TAB DISKUSI -->
+          <!-- ── TAB DISKUSI ── -->
           <div id="t-diskusi" class="tab-c">
             <?php if (empty($komentar)): ?>
-            <p style="text-align:center;color:#bbb;padding:20px 0;font-size:12px;"><i class="fa fa-comments" style="font-size:20px;display:block;margin-bottom:7px;"></i>Belum ada komentar</p>
+            <p style="text-align:center;color:#bbb;padding:20px 0;font-size:12px;">
+              <i class="fa fa-comments" style="font-size:20px;display:block;margin-bottom:7px;"></i>Belum ada komentar
+            </p>
             <?php else: foreach ($komentar as $km): ?>
             <div style="display:flex;gap:9px;margin-bottom:13px;padding-bottom:13px;border-bottom:1px solid #f5f5f5;">
-              <div class="av av-sm <?= ($km['role']==='teknisi'||$km['role']==='admin') ? 'av-blue' : '' ?>"><?= getInitials($km['nama']) ?></div>
+              <div class="av av-sm <?= ($km['role']==='teknisi_ipsrs'||$km['role']==='admin') ? 'av-blue' : '' ?>"><?= getInitials($km['nama']) ?></div>
               <div style="flex:1;">
                 <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;">
                   <strong style="font-size:12px;"><?= clean($km['nama']) ?></strong>
-                  <span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;background:<?= $km['role']==='admin'?'#ede9fe':($km['role']==='teknisi'?'#dbeafe':'#f3f4f6') ?>;color:<?= $km['role']==='admin'?'#7c3aed':($km['role']==='teknisi'?'#1d4ed8':'#374151') ?>;"><?= ucfirst($km['role']) ?></span>
+                  <span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;
+                    background:<?= $km['role']==='admin'?'#ede9fe':($km['role']==='teknisi_ipsrs'?'#dbeafe':'#f3f4f6') ?>;
+                    color:<?= $km['role']==='admin'?'#7c3aed':($km['role']==='teknisi_ipsrs'?'#1d4ed8':'#374151') ?>;">
+                    <?= ucfirst($km['role']) ?>
+                  </span>
                   <span style="font-size:11px;color:#bbb;margin-left:auto;"><?= timeAgo($km['created_at']) ?></span>
                 </div>
                 <p style="font-size:12px;color:#555;line-height:1.6;"><?= nl2br(clean($km['isi'])) ?></p>
@@ -450,7 +580,7 @@ include '../includes/header.php';
             </form>
           </div>
 
-          <!-- TAB FOTO VIEW (tiket final) -->
+          <!-- ── TAB FOTO VIEW (tiket final) ── -->
           <?php if ($is_final && count($fotos)): ?>
           <div id="t-foto-view" class="tab-c">
             <p style="font-size:12px;color:#888;margin-bottom:10px;"><?= count($fotos) ?> foto bukti pengerjaan tersimpan.</p>
@@ -467,13 +597,14 @@ include '../includes/header.php';
           </div>
           <?php endif; ?>
 
-          <!-- TAB TINDAKAN IT -->
-          <?php if (hasRole(array('admin','teknisi')) && !$is_final): ?>
+          <!-- ── TAB TINDAKAN IPSRS ── -->
+          <?php if (hasRole(array('admin','teknisi_ipsrs')) && !$is_final): ?>
           <div id="t-aksi" class="tab-c">
 
+            <!-- Assign / Info teknisi -->
             <?php if (hasRole('admin')): ?>
             <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #f0f0f0;">
-              <p style="font-size:12px;font-weight:700;color:#333;margin-bottom:4px;">Assign Teknisi</p>
+              <p style="font-size:12px;font-weight:700;color:#333;margin-bottom:4px;">Assign Teknisi IPSRS</p>
               <form method="POST" style="display:flex;gap:8px;align-items:flex-end;">
                 <input type="hidden" name="action" value="assign">
                 <div style="flex:1;">
@@ -487,7 +618,7 @@ include '../includes/header.php';
                 <button type="submit" class="btn btn-info"><i class="fa fa-user-check"></i> Assign</button>
               </form>
             </div>
-            <?php elseif (hasRole('teknisi')): ?>
+            <?php elseif (hasRole('teknisi_ipsrs')): ?>
             <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #f0f0f0;">
               <p style="font-size:12px;font-weight:700;color:#333;margin-bottom:6px;">Teknisi Penanganan</p>
               <?php if ($t['teknisi_id']): ?>
@@ -506,7 +637,7 @@ include '../includes/header.php';
             </div>
             <?php endif; ?>
 
-            <!-- UPLOAD FOTO BUKTI (mandiri, tanpa ubah status) -->
+            <!-- Upload Foto Bukti (mandiri) -->
             <div class="foto-section">
               <div class="foto-section-title">
                 <i class="fa fa-camera text-primary"></i>
@@ -554,7 +685,7 @@ include '../includes/header.php';
               </form>
             </div>
 
-            <!-- UPDATE STATUS TIKET -->
+            <!-- Update Status -->
             <p style="font-size:12px;font-weight:700;color:#333;margin-bottom:4px;"><i class="fa fa-edit text-primary"></i> Update Status Tiket</p>
             <p style="font-size:11px;color:#aaa;margin-bottom:12px;">Anda juga bisa melampirkan foto bukti sekaligus saat update status.</p>
             <form method="POST" enctype="multipart/form-data">
@@ -575,7 +706,8 @@ include '../includes/header.php';
               </div>
               <div class="form-group">
                 <label>Catatan / Alasan <span id="req-note"></span></label>
-                <textarea name="catatan_penolakan" id="note-input" class="form-control" placeholder="Tuliskan hasil penanganan, alasan penolakan, atau keterangan tidak bisa ditangani..." rows="3"></textarea>
+                <textarea name="catatan_teknisi" id="note-input" class="form-control"
+                          placeholder="Tuliskan hasil penanganan, alasan penolakan, atau keterangan tidak bisa ditangani..." rows="3"></textarea>
               </div>
               <div class="form-group">
                 <label style="display:flex;align-items:center;gap:6px;">
@@ -593,26 +725,27 @@ include '../includes/header.php';
               <button type="submit" class="btn btn-primary"><i class="fa fa-save"></i> Simpan Perubahan</button>
             </form>
 
-          </div>
+          </div><!-- /t-aksi -->
           <?php endif; ?>
 
         </div>
       </div>
     </div>
+    <!-- ══ END Kolom Kiri ══ -->
 
-    <!-- Kolom Kanan: SLA + Timeline -->
+    <!-- ══ Kolom Kanan: SLA + Timeline ══ -->
     <div>
       <?php if ($t['sla_jam']): ?>
       <div class="panel">
-        <div class="panel-hd"><h5><i class="fa fa-stopwatch text-primary"></i> &nbsp;SLA & Waktu</h5></div>
+        <div class="panel-hd"><h5><i class="fa fa-stopwatch text-primary"></i> &nbsp;SLA &amp; Waktu</h5></div>
         <div class="panel-bd">
           <?php
           $info_sla = array(
-            array('Waktu Submit',  formatTanggal($t['waktu_submit'],true)),
-            array('Waktu Respon',  $t['waktu_diproses'] ? formatTanggal($t['waktu_diproses'],true) : '—'),
-            array('Waktu Selesai', $t['waktu_selesai']  ? formatTanggal($t['waktu_selesai'],true)  : '—'),
-            array('Durasi Respon', formatDurasi($dur_respon).' / target '.$t['sla_respon_jam'].'j'),
-            array('Durasi Total',  formatDurasi($dur_selesai).' / target '.$t['sla_jam'].'j'),
+            array('Waktu Submit',  formatTanggal($t['waktu_submit'], true)),
+            array('Waktu Respon',  $t['waktu_proses'] ? formatTanggal($t['waktu_proses'], true) : '—'),
+            array('Waktu Selesai', $t['waktu_selesai']  ? formatTanggal($t['waktu_selesai'],  true) : '—'),
+            array('Durasi Respon', formatDurasi($dur_respon)  . ' / target ' . $t['sla_respon_jam'] . 'j'),
+            array('Durasi Total',  formatDurasi($dur_selesai) . ' / target ' . $t['sla_jam']         . 'j'),
           );
           foreach ($info_sla as $row): $l=$row[0]; $v=$row[1]; ?>
           <div class="d-flex ai-c" style="justify-content:space-between;margin-bottom:8px;font-size:12px;">
@@ -626,13 +759,17 @@ include '../includes/header.php';
             <span>Pencapaian SLA</span>
             <span class="sla-badge" style="background:<?= $sla_selesai['status']==='aman'?'#d1fae5':($sla_selesai['status']==='warning'?'#fef3c7':'#fee2e2') ?>;color:<?= $sla_selesai['status']==='aman'?'#065f46':($sla_selesai['status']==='warning'?'#92400e':'#991b1b') ?>;"><?= $sla_selesai['label'] ?></span>
           </div>
-          <div class="progress"><div class="progress-fill <?= $sla_selesai['status']==='aman'?'pg-green':($sla_selesai['status']==='warning'?'pg-orange':'pg-red') ?>" style="width:<?= min($sla_selesai['persen'],100) ?>%"></div></div>
+          <div class="progress">
+            <div class="progress-fill <?= $sla_selesai['status']==='aman'?'pg-green':($sla_selesai['status']==='warning'?'pg-orange':'pg-red') ?>"
+                 style="width:<?= min($sla_selesai['persen'],100) ?>%"></div>
+          </div>
           <div style="font-size:10px;color:#aaa;margin-top:3px;"><?= $sla_selesai['persen'] ?>% dari target <?= $t['sla_jam'] ?> jam</div>
           <?php endif; ?>
         </div>
       </div>
       <?php endif; ?>
 
+      <!-- Riwayat Aktivitas -->
       <div class="panel">
         <div class="panel-hd"><h5><i class="fa fa-history text-primary"></i> &nbsp;Riwayat Aktivitas</h5></div>
         <div class="panel-bd">
@@ -649,7 +786,7 @@ include '../includes/header.php';
               <div class="tl-dot <?= $dc ?>"><i class="fa fa-<?= $ic ?>"></i></div>
               <div>
                 <span class="tl-title"><?= $log['status_ke'] ? strtoupper($log['status_ke']) : 'DIBUAT' ?></span>
-                <span class="tl-time"><?= formatTanggal($log['created_at'],true) ?></span>
+                <span class="tl-time"><?= formatTanggal($log['created_at'], true) ?></span>
                 <div class="tl-by">oleh <?= clean(isset($log['nama']) ? $log['nama'] : '-') ?></div>
                 <?php if ($log['keterangan']): ?><div class="tl-desc"><?= clean($log['keterangan']) ?></div><?php endif; ?>
               </div>
@@ -659,8 +796,10 @@ include '../includes/header.php';
         </div>
       </div>
     </div>
-  </div>
-</div>
+    <!-- ══ END Kolom Kanan ══ -->
+
+  </div><!-- /g3 -->
+</div><!-- /content -->
 
 <!-- LIGHTBOX -->
 <div id="lightbox" onclick="if(event.target===this)closeLightbox()">
@@ -676,6 +815,7 @@ include '../includes/header.php';
 <script>
 var fotoData = <?= json_encode($foto_js_data, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>;
 var lbIndex  = 0;
+
 function openLightbox(idx) {
   if (!fotoData.length) return;
   lbIndex = idx; renderLightbox();
@@ -704,11 +844,10 @@ document.addEventListener('keydown', function(e) {
   if (e.key==='ArrowRight') lightboxNav(1);
 });
 
+/* ── Preview foto ── */
 var selectedFiles = [], selectedFilesStatus = [];
 
-function previewFoto(input) {
-  selectedFiles = Array.from(input.files); renderPreview();
-}
+function previewFoto(input) { selectedFiles = Array.from(input.files); renderPreview(); }
 function renderPreview() {
   var grid=document.getElementById('preview-grid'), btn=document.getElementById('btn-upload-foto'), cnt=document.getElementById('foto-count');
   if (!grid) return;
@@ -730,9 +869,7 @@ function syncInputFiles() {
   document.getElementById('input-foto').files=dt.files;
 }
 
-function previewFotoStatus(input) {
-  selectedFilesStatus = Array.from(input.files); renderPreviewStatus();
-}
+function previewFotoStatus(input) { selectedFilesStatus = Array.from(input.files); renderPreviewStatus(); }
 function renderPreviewStatus() {
   var grid=document.getElementById('preview-grid-status');
   if (!grid) return;
@@ -793,4 +930,5 @@ if (window.location.hash==='#t-aksi'){
   if (btn) btn.click();
 }
 </script>
+
 <?php include '../includes/footer.php'; ?>

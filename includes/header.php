@@ -42,6 +42,91 @@ $_css_url  = APP_URL . '/assets/css/style.css';
 .fs-about-btn:hover .fs-btn-sub   { color: rgba(255,255,255,.7); }
 .fs-chevron { color: rgba(255,255,255,.3); font-size: 10px; transition: all .2s; }
 .fs-about-btn:hover .fs-chevron   { color: rgba(255,255,255,.8); transform: translateX(2px); }
+
+/* ── Collapsible nav group (IPSRS / IT) ── */
+.nav-group-toggle {
+    display: flex; align-items: center; gap: 0;
+    width: 100%; cursor: pointer; user-select: none;
+    background: none; border: none; font-family: inherit; padding: 0;
+}
+.nav-group-toggle .nav-sec-label {
+    flex: 1; font-size: 10px; font-weight: 700; color: rgba(255,255,255,.35);
+    text-transform: uppercase; letter-spacing: 1px;
+    padding: 14px 16px 6px; display: block;
+}
+.nav-group-toggle .nav-sec-caret {
+    font-size: 9px; color: rgba(255,255,255,.25);
+    padding-right: 14px; padding-top: 8px;
+    transition: transform .2s;
+}
+.nav-group-toggle.open .nav-sec-caret { transform: rotate(180deg); }
+.nav-group-body { overflow: hidden; transition: max-height .3s ease; max-height: 500px; }
+.nav-group-body.collapsed { max-height: 0 !important; overflow: hidden; }
+/* ── Accordion Nav Group (details/summary) ── */
+.nav-group { border: none; }
+.nav-group summary.nav-group-hd {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px 9px 14px;
+    font-size: 11px; font-weight: 700;
+    color: rgba(255,255,255,.55);
+    text-transform: uppercase; letter-spacing: .5px;
+    cursor: pointer; list-style: none;
+    user-select: none;
+    transition: color .2s ease, background .2s ease;
+    border-left: 3px solid transparent;
+    white-space: nowrap; overflow: hidden;
+}
+.nav-group summary.nav-group-hd span {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nav-group summary.nav-group-hd::-webkit-details-marker { display: none; }
+.nav-group summary.nav-group-hd:hover { color: rgba(255,255,255,.85); background: rgba(255,255,255,.05); }
+.nav-group[open] summary.nav-group-hd { color: #26B99A; border-left-color: #26B99A; background: rgba(38,185,154,.08); }
+.nav-group summary.nav-group-hd .ni-grp { width: 16px; text-align: center; font-size: 13px; flex-shrink: 0; }
+.nav-group summary.nav-group-hd span   { flex: 1; }
+.nav-group summary.nav-group-hd .caret-grp { font-size: 9px; color: rgba(255,255,255,.25); transition: transform .2s; }
+.nav-group[open] summary.nav-group-hd .caret-grp { transform: rotate(180deg); color: #26B99A; }
+.nav-group summary.nav-group-hd .nc-grp {
+    font-size: 10px; font-weight: 700;
+    background: #e74c3c; color: #fff;
+    padding: 1px 6px; border-radius: 10px;
+    margin-right: 4px;
+}
+.nav-group-bd {
+    padding: 2px 0 6px 0;
+    overflow: hidden;
+    /* TIDAK ada animation di sini — animasi hanya via JS saat user klik */
+}
+/* Kelas animasi yang disuntik JS saja */
+.nav-group-bd.anim-open  { animation: slideDown .22s ease; }
+.nav-group-bd.anim-close { animation: slideUp .18s ease forwards; }
+@keyframes slideUp {
+    from { opacity: 1; transform: translateY(0); }
+    to   { opacity: 0; transform: translateY(-6px); }
+}
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.nav-group-bd .nav-item a {
+    padding-left: 36px !important;
+    transition: background .15s ease, color .15s ease, padding-left .15s ease;
+}
+.nav-group-bd .nav-item a:hover {
+    padding-left: 40px !important;
+}
+
+/* ── Hapus CSS nav-group-toggle lama (override) ── */
+.nav-group-toggle { display: none !important; }
+.nav-group-body   { display: none !important; }
+
+
+/* ── Sidebar collapsed state ── */
+@media (min-width: 769px) {
+  .sidebar.collapsed { width: 0; min-width: 0; overflow: hidden; }
+  .main.sb-collapsed,
+  .topnav.sb-collapsed { margin-left: 0 !important; }
+}
 </style>
 </head>
 <body>
@@ -72,7 +157,7 @@ $_css_url  = APP_URL . '/assets/css/style.css';
   $cnt_menunggu = (int)$pdo->query("SELECT COUNT(*) FROM tiket WHERE status='menunggu'")->fetchColumn();
   $cnt_diproses = (int)$pdo->query("SELECT COUNT(*) FROM tiket WHERE status='diproses'")->fetchColumn();
 
-  // Badge maintenance urgent (≤7 hari) — untuk admin & teknisi
+  // Badge maintenance IT urgent (≤7 hari)
   $cnt_mnt_urgent = 0;
   try {
       $cnt_mnt_urgent = (int)$pdo->query("
@@ -92,223 +177,355 @@ $_css_url  = APP_URL . '/assets/css/style.css';
       ")->fetchColumn();
   } catch(Exception $e) {}
 
-  // Badge tiket aktif milik user
+  // Badge tiket aktif milik user (IT)
   $cnt_user_aktif = 0;
   if (hasRole('user')) {
       $st2 = $pdo->prepare("SELECT COUNT(*) FROM tiket WHERE user_id=? AND status IN ('menunggu','diproses')");
       $st2->execute([$_SESSION['user_id']]);
       $cnt_user_aktif = (int)$st2->fetchColumn();
   }
+
+  // Badge tiket IPSRS aktif milik user
+  $cnt_user_ipsrs_aktif = 0;
+  if (hasRole('user')) {
+      try {
+          $st3 = $pdo->prepare("SELECT COUNT(*) FROM tiket_ipsrs WHERE user_id=? AND status IN ('menunggu','diproses')");
+          $st3->execute([$_SESSION['user_id']]);
+          $cnt_user_ipsrs_aktif = (int)$st3->fetchColumn();
+      } catch(Exception $e) {}
+  }
+
+  // ── Badge IPSRS ──────────────────────────────────────────────────────────────
+  // Tiket IPSRS menunggu & diproses
+  $cnt_ipsrs_menunggu = 0;
+  $cnt_ipsrs_diproses = 0;
+  try {
+      $cnt_ipsrs_menunggu = (int)$pdo->query("SELECT COUNT(*) FROM tiket_ipsrs WHERE status='menunggu'")->fetchColumn();
+      $cnt_ipsrs_diproses = (int)$pdo->query("SELECT COUNT(*) FROM tiket_ipsrs WHERE status='diproses'")->fetchColumn();
+  } catch(Exception $e) {}
+
+  // Badge maintenance IPSRS urgent (≤7 hari)
+  $cnt_mnt_ipsrs_urgent = 0;
+  try {
+      $cnt_mnt_ipsrs_urgent = (int)$pdo->query("
+          SELECT COUNT(DISTINCT aset_id) FROM maintenance_ipsrs
+          WHERE id IN (SELECT MAX(id) FROM maintenance_ipsrs GROUP BY aset_id)
+            AND tgl_maintenance_berikut BETWEEN CURDATE() AND DATE_ADD(CURDATE(),INTERVAL 7 DAY)
+      ")->fetchColumn();
+  } catch(Exception $e) {}
+
+
+  // ── Deteksi grup aktif untuk auto-expand ──────────────────────────────────
+  $grp_tiket_it    = in_array($active_menu??'', ['antrian','semua_tiket','sla','dashboard']);
+  $grp_tiket_ipsrs = in_array($active_menu??'', ['antrian_ipsrs','semua_tiket_ipsrs','sla_ipsrs']);
+  $grp_aset_it     = in_array($active_menu??'', ['aset_it','maintenance_it','cek_koneksi','server_room']);
+  $grp_aset_ipsrs  = in_array($active_menu??'', ['aset_ipsrs','maintenance_ipsrs']);
+  $grp_master      = in_array($active_menu??'', ['kategori','kategori_ipsrs','bagian','users']);
+  $grp_setting     = in_array($active_menu??'', ['setting_telegram']);
+  $grp_tiket_saya  = in_array($active_menu??'', ['buat_tiket','tiket_saya']);
+  $grp_tiket_saya_ipsrs = in_array($active_menu??'', ['buat_tiket_sarpras','tiket_saya_ipsrs']);
   ?>
 
+  <!-- ══════════════════════════════════════════════
+       MENU: USER BIASA
+  ══════════════════════════════════════════════ -->
+  <?php if (hasRole('user')): ?>
 
-  <?php /* ══════════════════════════════════════════════════════
-            MENU: USER BIASA
-         ══════════════════════════════════════════════════════ */
-  if (hasRole('user')): ?>
-
-  <div class="nav-sec">Menu</div>
   <div class="nav-item <?= ($active_menu??'')==='dashboard'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/dashboard.php">
-      <i class="fa fa-home ni"></i><span class="nl">Beranda</span>
-    </a>
+    <a href="<?= APP_URL ?>/dashboard.php"><i class="fa fa-home ni"></i><span class="nl">Dashboard</span></a>
   </div>
 
-  <div class="nav-sec">Tiket Saya</div>
-  <div class="nav-item <?= ($active_menu??'')==='buat_tiket'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/buat_tiket.php">
-      <i class="fa fa-plus-circle ni"></i><span class="nl">Buat Tiket Baru</span>
-    </a>
-  </div>
-  <div class="nav-item <?= ($active_menu??'')==='tiket_saya'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/tiket_saya.php">
-      <i class="fa fa-list-alt ni"></i><span class="nl">Semua Tiket Saya</span>
-      <?php if ($cnt_user_aktif): ?><span class="nc"><?= $cnt_user_aktif ?></span><?php endif; ?>
-    </a>
-  </div>
-  <div class="nav-item">
-    <a href="<?= APP_URL ?>/pages/tiket_saya.php?status=menunggu">
-      <i class="fa fa-clock ni"></i><span class="nl">Menunggu</span>
-    </a>
-  </div>
-  <div class="nav-item">
-    <a href="<?= APP_URL ?>/pages/tiket_saya.php?status=diproses">
-      <i class="fa fa-cogs ni"></i><span class="nl">Sedang Diproses</span>
-    </a>
-  </div>
+  <!-- Tiket IT Saya -->
+  <details class="nav-group" <?= $grp_tiket_saya ? 'open' : '' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-desktop ni-grp"></i><span>Tiket IT</span><i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+      <div class="nav-item <?= ($active_menu??'')==='buat_tiket'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/buat_tiket.php"><i class="fa fa-plus-circle ni"></i><span class="nl">Buat Tiket IT</span></a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='tiket_saya'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/tiket_saya.php"><i class="fa fa-list-alt ni"></i><span class="nl">Tiket Saya</span>
+          <?php if ($cnt_user_aktif): ?><span class="nc"><?= $cnt_user_aktif ?></span><?php endif; ?>
+        </a>
+      </div>
+    </div>
+  </details>
+
+  <!-- Tiket IPSRS Saya -->
+  <details class="nav-group" <?= $grp_tiket_saya_ipsrs ? 'open' : '' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-toolbox ni-grp"></i><span>Tiket IPSRS</span><i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+      <div class="nav-item <?= ($active_menu??'')=='buat_tiket_sarpras'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/buat_tiket_sarpras.php"><i class="fa fa-plus-circle ni"></i><span class="nl">Buat Tiket IPSRS</span></a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')=='tiket_saya_ipsrs'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/tiket_saya_ipsrs.php"><i class="fa fa-list-alt ni"></i><span class="nl">Tiket IPSRS Saya</span>
+          <?php if ($cnt_user_ipsrs_aktif): ?><span class="nc"><?= $cnt_user_ipsrs_aktif ?></span><?php endif; ?>
+        </a>
+      </div>
+    </div>
+  </details>
 
 
-  <?php /* ══════════════════════════════════════════════════════
-            MENU: TEKNISI
-         ══════════════════════════════════════════════════════ */
-  elseif (hasRole('teknisi')): ?>
+  <!-- ══════════════════════════════════════════════
+       MENU: TEKNISI IT
+  ══════════════════════════════════════════════ -->
+  <?php elseif (hasRole('teknisi')): ?>
 
-  <div class="nav-sec">Menu</div>
   <div class="nav-item <?= ($active_menu??'')==='dashboard'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/dashboard.php">
-      <i class="fa fa-home ni"></i><span class="nl">Dashboard</span>
-    </a>
+    <a href="<?= APP_URL ?>/dashboard.php"><i class="fa fa-home ni"></i><span class="nl">Dashboard</span></a>
   </div>
 
-  <div class="nav-sec">Order Masuk</div>
-  <div class="nav-item <?= ($active_menu??'')==='antrian'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/antrian.php">
-      <i class="fa fa-inbox ni"></i><span class="nl">Antrian Tiket</span>
-      <?php if ($cnt_menunggu): ?><span class="nc"><?= $cnt_menunggu ?></span><?php endif; ?>
-    </a>
-  </div>
-  <div class="nav-item <?= ($active_menu??'')==='semua_tiket'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/semua_tiket.php">
-      <i class="fa fa-ticket-alt ni"></i><span class="nl">Semua Tiket</span>
-      <?php if ($cnt_diproses): ?><span class="nc"><?= $cnt_diproses ?></span><?php endif; ?>
-    </a>
-  </div>
-  <div class="nav-item <?= ($active_menu??'')==='sla'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/sla.php">
-      <i class="fa fa-chart-line ni"></i><span class="nl">Laporan SLA</span>
-    </a>
-  </div>
+  <details class="nav-group" <?= $grp_tiket_it ? 'open' : '' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-desktop ni-grp"></i><span>Tiket IT</span>
+      <?php if ($cnt_menunggu): ?><span class="nc-grp"><?= $cnt_menunggu ?></span><?php endif; ?>
+      <i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+      <div class="nav-item <?= ($active_menu??'')==='antrian'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/antrian.php"><i class="fa fa-inbox ni"></i><span class="nl">Antrian</span>
+          <?php if ($cnt_menunggu): ?><span class="nc"><?= $cnt_menunggu ?></span><?php endif; ?>
+        </a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='semua_tiket'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/semua_tiket.php"><i class="fa fa-ticket-alt ni"></i><span class="nl">Semua Tiket</span></a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='sla'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/sla.php"><i class="fa fa-chart-line ni"></i><span class="nl">Laporan SLA</span></a>
+      </div>
+    </div>
+  </details>
 
-  <div class="nav-sec">Aset & Perawatan</div>
-  <div class="nav-item <?= ($active_menu??'')==='aset_it'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/aset_it.php">
-      <i class="fa fa-server ni"></i><span class="nl">Aset IT</span>
-    </a>
-  </div>
-  <div class="nav-item <?= ($active_menu??'')==='maintenance_it'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/maintenance_it.php">
-      <i class="fa fa-screwdriver-wrench ni"></i><span class="nl">Maintenance IT</span>
-      <?php if ($cnt_mnt_urgent): ?>
-      <span class="nc" style="background:#f59e0b;"><?= $cnt_mnt_urgent ?></span>
-      <?php endif; ?>
-    </a>
-  </div>
-  <div class="nav-item <?= ($active_menu??'')==='cek_koneksi'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/cek_koneksi.php">
-      <i class="fa fa-wifi ni"></i><span class="nl">Monitor Koneksi</span>
-      <?php if ($cnt_offline): ?>
-      <span class="nc" style="background:#ef4444;"><?= $cnt_offline ?></span>
-      <?php endif; ?>
-    </a>
-  </div>
-
-<div class="nav-item <?= ($active_menu??'')==='server_room'?'active':'' ?>">
-  <a href="<?= APP_URL ?>/pages/server_room.php">
-    <i class="fa fa-server ni"></i>
-    <span class="nl">Monitoring Server</span>
-    <?php if ($cnt_mnt_urgent): ?>
-      <span class="nc" style="background:#f59e0b;"><?= $cnt_mnt_urgent ?></span>
-    <?php endif; ?>
-  </a>
-</div>
+  <details class="nav-group" <?= $grp_aset_it ? 'open' : '' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-server ni-grp"></i><span>Aset IT</span>
+      <?php if ($cnt_mnt_urgent): ?><span class="nc-grp"><?= $cnt_mnt_urgent ?></span><?php endif; ?>
+      <i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+      <div class="nav-item <?= ($active_menu??'')==='aset_it'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/aset_it.php"><i class="fa fa-server ni"></i><span class="nl">Aset IT</span></a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='maintenance_it'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/maintenance_it.php"><i class="fa fa-screwdriver-wrench ni"></i><span class="nl">Maintenance IT</span>
+          <?php if ($cnt_mnt_urgent): ?><span class="nc"><?= $cnt_mnt_urgent ?></span><?php endif; ?>
+        </a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='cek_koneksi'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/cek_koneksi.php"><i class="fa fa-wifi ni"></i><span class="nl">Monitor Koneksi</span>
+          <?php if ($cnt_offline): ?><span class="nc" style="background:#ef4444;"><?= $cnt_offline ?></span><?php endif; ?>
+        </a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='server_room'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/server_room.php"><i class="fa fa-server ni"></i><span class="nl">Monitoring Server</span></a>
+      </div>
+    </div>
+  </details>
 
 
-  <?php /* ══════════════════════════════════════════════════════
-            MENU: ADMIN
-         ══════════════════════════════════════════════════════ */
-  else: // admin ?>
+  <!-- ══════════════════════════════════════════════
+       MENU: TEKNISI IPSRS
+  ══════════════════════════════════════════════ -->
+  <?php elseif (hasRole('teknisi_ipsrs')): ?>
 
-  <div class="nav-sec">Menu</div>
   <div class="nav-item <?= ($active_menu??'')==='dashboard'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/dashboard.php">
-      <i class="fa fa-home ni"></i><span class="nl">Dashboard</span>
-    </a>
+    <a href="<?= APP_URL ?>/dashboard.php"><i class="fa fa-home ni"></i><span class="nl">Dashboard</span></a>
   </div>
 
-  <div class="nav-sec">Order Masuk</div>
-  <div class="nav-item <?= ($active_menu??'')==='antrian'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/antrian.php">
-      <i class="fa fa-inbox ni"></i><span class="nl">Antrian Tiket</span>
-      <?php if ($cnt_menunggu): ?><span class="nc"><?= $cnt_menunggu ?></span><?php endif; ?>
-    </a>
-  </div>
-  <div class="nav-item <?= ($active_menu??'')==='semua_tiket'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/semua_tiket.php">
-      <i class="fa fa-ticket-alt ni"></i><span class="nl">Semua Tiket</span>
-      <?php if ($cnt_diproses): ?><span class="nc"><?= $cnt_diproses ?></span><?php endif; ?>
-    </a>
-  </div>
-  <div class="nav-item <?= ($active_menu??'')==='sla'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/sla.php">
-      <i class="fa fa-chart-line ni"></i><span class="nl">Laporan SLA</span>
-    </a>
+  <details class="nav-group" <?= $grp_tiket_ipsrs ? 'open' : '' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-toolbox ni-grp"></i><span>Tiket IPSRS</span>
+      <?php if ($cnt_ipsrs_menunggu): ?><span class="nc-grp"><?= $cnt_ipsrs_menunggu ?></span><?php endif; ?>
+      <i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+      <div class="nav-item <?= ($active_menu??'')==='antrian_ipsrs'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/antrian_ipsrs.php"><i class="fa fa-inbox ni"></i><span class="nl">Antrian IPSRS</span>
+          <?php if ($cnt_ipsrs_menunggu): ?><span class="nc"><?= $cnt_ipsrs_menunggu ?></span><?php endif; ?>
+        </a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='semua_tiket_ipsrs'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/semua_tiket_ipsrs.php"><i class="fa fa-ticket-alt ni"></i><span class="nl">Semua Tiket IPSRS</span></a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='sla_ipsrs'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/sla_ipsrs.php"><i class="fa fa-chart-line ni"></i><span class="nl">Laporan SLA IPSRS</span></a>
+      </div>
+    </div>
+  </details>
+
+  <details class="nav-group" <?= $grp_aset_ipsrs ? 'open' : '' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-wrench ni-grp"></i><span>Aset IPSRS</span>
+      <?php if ($cnt_mnt_ipsrs_urgent): ?><span class="nc-grp"><?= $cnt_mnt_ipsrs_urgent ?></span><?php endif; ?>
+      <i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+      <div class="nav-item <?= ($active_menu??'')==='aset_ipsrs'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/aset_ipsrs.php"><i class="fa fa-toolbox ni"></i><span class="nl">Aset IPSRS</span></a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='maintenance_ipsrs'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/maintenance_ipsrs.php"><i class="fa fa-wrench ni"></i><span class="nl">Maintenance IPSRS</span>
+          <?php if ($cnt_mnt_ipsrs_urgent): ?><span class="nc"><?= $cnt_mnt_ipsrs_urgent ?></span><?php endif; ?>
+        </a>
+      </div>
+    </div>
+  </details>
+
+
+  <!-- ══════════════════════════════════════════════
+       MENU: ADMIN
+  ══════════════════════════════════════════════ -->
+  <?php else: // admin ?>
+
+  <div class="nav-item <?= ($active_menu??'')==='dashboard'?'active':'' ?>">
+    <a href="<?= APP_URL ?>/dashboard.php"><i class="fa fa-home ni"></i><span class="nl">Dashboard</span></a>
   </div>
 
-  <div class="nav-sec">Aset & Perawatan</div>
-  <div class="nav-item <?= ($active_menu??'')==='aset_it'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/aset_it.php">
-      <i class="fa fa-server ni"></i><span class="nl">Aset IT</span>
-    </a>
-  </div>
-  <div class="nav-item <?= ($active_menu??'')==='maintenance_it'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/maintenance_it.php">
-      <i class="fa fa-screwdriver-wrench ni"></i><span class="nl">Maintenance IT</span>
-      <?php if ($cnt_mnt_urgent): ?>
-      <span class="nc" style="background:#f59e0b;"><?= $cnt_mnt_urgent ?></span>
-      <?php endif; ?>
-    </a>
-  </div>
-  <div class="nav-item <?= ($active_menu??'')==='cek_koneksi'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/cek_koneksi.php">
-      <i class="fa fa-wifi ni"></i><span class="nl">Monitor Koneksi</span>
-      <?php if ($cnt_offline): ?>
-      <span class="nc" style="background:#ef4444;"><?= $cnt_offline ?></span>
-      <?php endif; ?>
-    </a>
-  </div>
+  <!-- Tiket IT -->
+  <details class="nav-group" <?= $grp_tiket_it ? 'open' : '' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-desktop ni-grp"></i><span>Tiket IT</span>
+      <?php if ($cnt_menunggu): ?><span class="nc-grp"><?= $cnt_menunggu ?></span><?php endif; ?>
+      <i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+      <div class="nav-item <?= ($active_menu??'')==='antrian'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/antrian.php"><i class="fa fa-inbox ni"></i><span class="nl">Antrian Tiket</span>
+          <?php if ($cnt_menunggu): ?><span class="nc"><?= $cnt_menunggu ?></span><?php endif; ?>
+        </a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='semua_tiket'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/semua_tiket.php"><i class="fa fa-ticket-alt ni"></i><span class="nl">Semua Tiket</span></a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='sla'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/sla.php"><i class="fa fa-chart-line ni"></i><span class="nl">Laporan SLA</span></a>
+      </div>
+    </div>
+  </details>
 
-<div class="nav-item <?= ($active_menu??'')==='server_room'?'active':'' ?>">
-  <a href="<?= APP_URL ?>/pages/server_room.php">
-    <i class="fa fa-server ni"></i>
-    <span class="nl">Monitoring Server</span>
-    <?php if ($cnt_mnt_urgent): ?>
-      <span class="nc" style="background:#f59e0b;"><?= $cnt_mnt_urgent ?></span>
-    <?php endif; ?>
-  </a>
-</div>
+  <!-- Tiket IPSRS -->
+  <details class="nav-group" <?= $grp_tiket_ipsrs ? 'open' : '' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-toolbox ni-grp"></i><span>Tiket IPSRS</span>
+      <?php if ($cnt_ipsrs_menunggu): ?><span class="nc-grp"><?= $cnt_ipsrs_menunggu ?></span><?php endif; ?>
+      <i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+      <div class="nav-item <?= ($active_menu??'')==='antrian_ipsrs'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/antrian_ipsrs.php"><i class="fa fa-inbox ni"></i><span class="nl">Antrian IPSRS</span>
+          <?php if ($cnt_ipsrs_menunggu): ?><span class="nc"><?= $cnt_ipsrs_menunggu ?></span><?php endif; ?>
+        </a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='semua_tiket_ipsrs'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/semua_tiket_ipsrs.php"><i class="fa fa-ticket-alt ni"></i><span class="nl">Semua Tiket IPSRS</span></a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='sla_ipsrs'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/sla_ipsrs.php"><i class="fa fa-chart-line ni"></i><span class="nl">Laporan SLA IPSRS</span></a>
+      </div>
+    </div>
+  </details>
 
-  <div class="nav-sec">Master Data</div>
-  <div class="nav-item <?= ($active_menu??'')==='kategori'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/kategori.php">
-      <i class="fa fa-tags ni"></i><span class="nl">Kategori</span>
-    </a>
-  </div>
-  <div class="nav-item <?= ($active_menu??'')==='bagian'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/bagian.php">
-      <i class="fa fa-building ni"></i><span class="nl">Bagian / Divisi</span>
-    </a>
-  </div>
-  <div class="nav-item <?= ($active_menu??'')==='users'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/users.php">
-      <i class="fa fa-users ni"></i><span class="nl">Pengguna</span>
-    </a>
-  </div>
+  <!-- Aset & Perawatan IT -->
+  <details class="nav-group" <?= $grp_aset_it ? 'open' : '' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-server ni-grp"></i><span>Aset IT</span>
+      <?php if ($cnt_mnt_urgent||$cnt_offline): ?><span class="nc-grp"><?= $cnt_mnt_urgent+$cnt_offline ?></span><?php endif; ?>
+      <i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+      <div class="nav-item <?= ($active_menu??'')==='aset_it'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/aset_it.php"><i class="fa fa-server ni"></i><span class="nl">Aset IT</span></a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='maintenance_it'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/maintenance_it.php"><i class="fa fa-screwdriver-wrench ni"></i><span class="nl">Maintenance IT</span>
+          <?php if ($cnt_mnt_urgent): ?><span class="nc" style="background:#f59e0b;"><?= $cnt_mnt_urgent ?></span><?php endif; ?>
+        </a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='cek_koneksi'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/cek_koneksi.php"><i class="fa fa-wifi ni"></i><span class="nl">Monitor Koneksi</span>
+          <?php if ($cnt_offline): ?><span class="nc" style="background:#ef4444;"><?= $cnt_offline ?></span><?php endif; ?>
+        </a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='server_room'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/server_room.php"><i class="fa fa-server ni"></i><span class="nl">Monitoring Server</span></a>
+      </div>
+    </div>
+  </details>
 
-  <div class="nav-sec">Pengaturan</div>
-  <div class="nav-item <?= ($active_menu??'')==='setting_telegram'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/setting_telegram.php">
-      <i class="fa fa-paper-plane ni" style="color:#0088cc;"></i>
-      <span class="nl">Notif Telegram</span>
-      <?php
-      try {
-          $tg_on = $pdo->query("SELECT value FROM settings WHERE `key`='telegram_enabled'")->fetchColumn();
-          echo $tg_on == '1'
-              ? '<span style="width:7px;height:7px;border-radius:50%;background:#27ae60;display:inline-block;margin-left:2px;" title="Aktif"></span>'
-              : '<span style="width:7px;height:7px;border-radius:50%;background:#bbb;display:inline-block;margin-left:2px;" title="Nonaktif"></span>';
-      } catch(Exception $e) {}
-      ?>
-    </a>
-  </div>
+  <!-- Aset & Perawatan IPSRS -->
+  <details class="nav-group" <?= $grp_aset_ipsrs ? 'open' : '' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-wrench ni-grp"></i><span>Aset IPSRS</span>
+      <?php if ($cnt_mnt_ipsrs_urgent): ?><span class="nc-grp"><?= $cnt_mnt_ipsrs_urgent ?></span><?php endif; ?>
+      <i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+      <div class="nav-item <?= ($active_menu??'')==='aset_ipsrs'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/aset_ipsrs.php"><i class="fa fa-toolbox ni"></i><span class="nl">Aset IPSRS</span></a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='maintenance_ipsrs'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/maintenance_ipsrs.php"><i class="fa fa-wrench ni"></i><span class="nl">Maintenance IPSRS</span>
+          <?php if ($cnt_mnt_ipsrs_urgent): ?><span class="nc" style="background:#f59e0b;"><?= $cnt_mnt_ipsrs_urgent ?></span><?php endif; ?>
+        </a>
+      </div>
+    </div>
+  </details>
+
+  <!-- Master Data -->
+  <details class="nav-group" <?= $grp_master ? 'open' : '' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-database ni-grp"></i><span>Master Data</span>
+      <i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+      <div class="nav-item <?= ($active_menu??'')==='kategori'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/kategori.php"><i class="fa fa-tags ni"></i><span class="nl">Kategori IT</span></a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='kategori_ipsrs'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/kategori_ipsrs.php"><i class="fa fa-tags ni" style="color:#f97316;"></i><span class="nl">Kategori IPSRS</span></a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='bagian'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/bagian.php"><i class="fa fa-building ni"></i><span class="nl">Bagian / Divisi</span></a>
+      </div>
+      <div class="nav-item <?= ($active_menu??'')==='users'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/users.php"><i class="fa fa-users ni"></i><span class="nl">Pengguna</span></a>
+      </div>
+    </div>
+  </details>
+
+  <!-- Pengaturan -->
+  <details class="nav-group" <?= $grp_setting ? 'open' : '' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-cog ni-grp"></i><span>Pengaturan</span>
+      <i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+      <div class="nav-item <?= ($active_menu??'')==='setting_telegram'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/setting_telegram.php">
+          <i class="fa fa-paper-plane ni" style="color:#0088cc;"></i><span class="nl">Notif Telegram</span>
+          <?php try {
+            $tg_on = $pdo->query("SELECT value FROM settings WHERE `key`='telegram_enabled'")->fetchColumn();
+            echo $tg_on=='1'
+              ? '<span style="width:7px;height:7px;border-radius:50%;background:#27ae60;display:inline-block;margin-left:2px;"></span>'
+              : '<span style="width:7px;height:7px;border-radius:50%;background:#bbb;display:inline-block;margin-left:2px;"></span>';
+          } catch(Exception $e) {} ?>
+        </a>
+      </div>
+    </div>
+  </details>
 
   <?php endif; // end role check ?>
 
-
-  <!-- ── Profil (semua role) ── -->
+  <!-- Profil (semua role) -->
   <div class="nav-item <?= ($active_menu??'')==='profil'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/profil.php">
-      <i class="fa fa-user-circle ni"></i><span class="nl">Profil Saya</span>
-    </a>
+    <a href="<?= APP_URL ?>/pages/profil.php"><i class="fa fa-user-circle ni"></i><span class="nl">Profil Saya</span></a>
   </div>
+
+
 
   <!-- ── BOTTOM: Tombol About + Keluar ── -->
   <div class="sb-bottom">
@@ -340,7 +557,13 @@ $_css_url  = APP_URL . '/assets/css/style.css';
     <?php if (hasRole(['admin','teknisi']) && $cnt_menunggu): ?>
     <a href="<?= APP_URL ?>/pages/antrian.php"
        style="font-size:12px;color:var(--orange);font-weight:600;text-decoration:none;">
-      <i class="fa fa-bell"></i> <?= $cnt_menunggu ?> tiket baru
+      <i class="fa fa-bell"></i> <?= $cnt_menunggu ?> tiket IT
+    </a>
+    <?php endif; ?>
+    <?php if (hasRole(['admin','teknisi_ipsrs']) && $cnt_ipsrs_menunggu): ?>
+    <a href="<?= APP_URL ?>/pages/antrian_ipsrs.php"
+       style="font-size:12px;color:var(--orange);font-weight:600;text-decoration:none;">
+      <i class="fa fa-bell"></i> <?= $cnt_ipsrs_menunggu ?> tiket IPSRS
     </a>
     <?php endif; ?>
 
@@ -515,6 +738,122 @@ function copyText(text, btn) {
     }, 2000);
   });
 }
+
+/* ── Sidebar toggle ── */
+function toggleSidebar() {
+  const sb   = document.getElementById('sidebar');
+  const main = document.getElementById('main');
+  const tn   = document.getElementById('topnav');
+  if (!sb) return;
+  sb.classList.toggle('collapsed');
+  if (main) main.classList.toggle('sb-collapsed');
+  if (tn)   tn.classList.toggle('sb-collapsed');
+  try { localStorage.setItem('sb_collapsed', sb.classList.contains('collapsed') ? '1' : '0'); } catch(e) {}
+}
+
+/* ── Restore sidebar state ── */
+(function() {
+  try {
+    if (localStorage.getItem('sb_collapsed') === '1') {
+      const sb   = document.getElementById('sidebar');
+      const main = document.getElementById('main');
+      const tn   = document.getElementById('topnav');
+      if (sb)   sb.classList.add('collapsed');
+      if (main) main.classList.add('sb-collapsed');
+      if (tn)   tn.classList.add('sb-collapsed');
+    }
+  } catch(e) {}
+})();
+
+/* ── Modal open / close ── */
+function openModal(id) {
+  const el = document.getElementById(id);
+  if (el) { el.style.display = 'flex'; document.body.style.overflow = 'hidden'; }
+}
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (el) { el.style.display = 'none'; document.body.style.overflow = ''; }
+}
+// Tutup modal klik overlay
+document.addEventListener('click', function(e) {
+  if (e.target && e.target.classList.contains('modal-ov')) closeModal(e.target.id);
+});
+// Tutup modal tekan Esc
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-ov').forEach(function(m) {
+      if (m.style.display === 'flex') closeModal(m.id);
+    });
+  }
+});
+
+/* ── Dropdown user topnav ── */
+function toggleDropdown(el) {
+  el.classList.toggle('open');
+}
+document.addEventListener('click', function(e) {
+  document.querySelectorAll('.tn-user.open').forEach(function(d) {
+    if (!d.contains(e.target)) d.classList.remove('open');
+  });
+});
+
+/* ── Flash alert auto-dismiss ── */
+setTimeout(function() {
+  document.querySelectorAll('.alert').forEach(function(a) {
+    a.style.transition = 'opacity .4s';
+    a.style.opacity = '0';
+    setTimeout(function() { if (a.parentNode) a.parentNode.removeChild(a); }, 400);
+  });
+}, 4000);
+
+/* ── Collapsible nav group ── */
+function toggleNavGroup(id, btn) {
+  const body = document.getElementById(id);
+  if (!body) return;
+  const isOpen = !body.classList.contains('collapsed');
+  if (isOpen) {
+    body.classList.add('collapsed');
+    btn.classList.remove('open');
+  } else {
+    body.classList.remove('collapsed');
+    btn.classList.add('open');
+  }
+}
+
+/* ── Smooth accordion untuk <details> ── */
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('details.nav-group').forEach(function(det) {
+    det.addEventListener('click', function(e) {
+      if (!e.target.closest('summary')) return;
+
+      var bd = det.querySelector('.nav-group-bd');
+      if (!bd) return;
+
+      if (det.open) {
+        /* ── Menutup: animasi slideUp ── */
+        e.preventDefault();
+        bd.classList.remove('anim-open');
+        bd.classList.add('anim-close');
+        setTimeout(function() {
+          det.removeAttribute('open');
+          bd.classList.remove('anim-close');
+        }, 160);
+      } else {
+        /* ── Membuka: animasi slideDown ── */
+        /* Biarkan browser buka dulu, baru tambah kelas animasi */
+        requestAnimationFrame(function() {
+          bd.classList.remove('anim-close');
+          bd.classList.add('anim-open');
+          bd.addEventListener('animationend', function onEnd() {
+            bd.classList.remove('anim-open');
+            bd.removeEventListener('animationend', onEnd);
+          });
+        });
+      }
+    });
+  });
+});
+
 </script>
 
 <!-- ========== MAIN ========== -->

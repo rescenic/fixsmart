@@ -20,20 +20,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $act = $_POST['_action'] ?? '';
 
     if ($act === 'tambah' || $act === 'edit') {
-        $auto_inv   = ($_POST['auto_inv'] ?? '0') === '1';
-        $no_inv     = $auto_inv ? generateNoInventaris($pdo) : trim($_POST['no_inventaris'] ?? '');
-        $nama       = trim($_POST['nama_aset']     ?? '');
-        $kategori   = trim($_POST['kategori']      ?? '');
-        $merek      = trim($_POST['merek']         ?? '');
-        $model      = trim($_POST['model_aset']    ?? '');
-        $serial     = trim($_POST['serial_number'] ?? '');
-        $kondisi    = trim($_POST['kondisi']       ?? 'Baik');
-        $bagian_id  = (int)($_POST['bagian_id']    ?? 0) ?: null;
-        $pj_user_id = (int)($_POST['pj_user_id']   ?? 0) ?: null;
-        $tgl_beli   = $_POST['tanggal_beli']  ?: null;
-        $harga      = strlen($_POST['harga_beli'] ?? '') ? (int)$_POST['harga_beli'] : null;
-        $garansi    = $_POST['garansi_sampai'] ?: null;
-        $keterangan = trim($_POST['keterangan'] ?? '');
+        $auto_inv    = ($_POST['auto_inv'] ?? '0') === '1';
+        $no_inv      = $auto_inv ? generateNoInventaris($pdo) : trim($_POST['no_inventaris'] ?? '');
+        $nama        = trim($_POST['nama_aset']     ?? '');
+        $kategori    = trim($_POST['kategori']      ?? '');
+        $merek       = trim($_POST['merek']         ?? '');
+        $model       = trim($_POST['model_aset']    ?? '');
+        $serial      = trim($_POST['serial_number'] ?? '');
+        $kondisi     = trim($_POST['kondisi']       ?? 'Baik');
+        $status_pakai= trim($_POST['status_pakai']  ?? 'Terpakai');
+        $bagian_id   = (int)($_POST['bagian_id']    ?? 0) ?: null;
+        $pj_user_id  = (int)($_POST['pj_user_id']   ?? 0) ?: null;
+        $tgl_beli    = $_POST['tanggal_beli']  ?: null;
+        $harga       = strlen($_POST['harga_beli'] ?? '') ? (int)$_POST['harga_beli'] : null;
+        $garansi     = $_POST['garansi_sampai'] ?: null;
+        $keterangan  = trim($_POST['keterangan'] ?? '');
 
         // Simpan nama teks dari relasi (untuk display cepat tanpa JOIN)
         $lokasi_teks = '';
@@ -51,22 +52,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($act === 'tambah') {
             $pdo->prepare("INSERT INTO aset_it
-                (no_inventaris,nama_aset,kategori,merek,model_aset,serial_number,kondisi,
+                (no_inventaris,nama_aset,kategori,merek,model_aset,serial_number,kondisi,status_pakai,
                  bagian_id,lokasi,pj_user_id,penanggung_jawab,
                  tanggal_beli,harga_beli,garansi_sampai,keterangan,created_by,created_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())")
-                ->execute([$no_inv,$nama,$kategori,$merek,$model,$serial,$kondisi,
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())")
+                ->execute([$no_inv,$nama,$kategori,$merek,$model,$serial,$kondisi,$status_pakai,
                            $bagian_id,$lokasi_teks,$pj_user_id,$pj_nama,
                            $tgl_beli,$harga,$garansi,$keterangan,$_SESSION['user_id']]);
             setFlash('success','Aset <strong>'.htmlspecialchars($nama).'</strong> berhasil ditambahkan dengan nomor <code>'.$no_inv.'</code>.');
         } else {
             $id = (int)$_POST['id'];
             $pdo->prepare("UPDATE aset_it SET
-                no_inventaris=?,nama_aset=?,kategori=?,merek=?,model_aset=?,serial_number=?,kondisi=?,
+                no_inventaris=?,nama_aset=?,kategori=?,merek=?,model_aset=?,serial_number=?,kondisi=?,status_pakai=?,
                 bagian_id=?,lokasi=?,pj_user_id=?,penanggung_jawab=?,
                 tanggal_beli=?,harga_beli=?,garansi_sampai=?,keterangan=?,updated_at=NOW()
                 WHERE id=?")
-                ->execute([$no_inv,$nama,$kategori,$merek,$model,$serial,$kondisi,
+                ->execute([$no_inv,$nama,$kategori,$merek,$model,$serial,$kondisi,$status_pakai,
                            $bagian_id,$lokasi_teks,$pj_user_id,$pj_nama,
                            $tgl_beli,$harga,$garansi,$keterangan,$id]);
             setFlash('success','Aset berhasil diperbarui.');
@@ -98,15 +99,17 @@ if (isset($_GET['preview_no_inv'])) {
 }
 
 // ── Pagination & Filter ───────────────────────────────────────────────────────
-$page     = max(1,(int)($_GET['page'] ?? 1));
-$per_page = 15;
-$fk       = $_GET['kategori'] ?? '';
-$fkondisi = $_GET['kondisi']  ?? '';
-$search   = $_GET['q']        ?? '';
+$page        = max(1,(int)($_GET['page']         ?? 1));
+$per_page    = 15;
+$fk          = $_GET['kategori']     ?? '';
+$fkondisi    = $_GET['kondisi']      ?? '';
+$fstatus     = $_GET['status_pakai'] ?? '';
+$search      = $_GET['q']            ?? '';
 
 $where  = ['1=1']; $params = [];
-if ($fk)       { $where[] = 'a.kategori=?'; $params[] = $fk; }
-if ($fkondisi) { $where[] = 'a.kondisi=?';  $params[] = $fkondisi; }
+if ($fk)       { $where[] = 'a.kategori=?';     $params[] = $fk; }
+if ($fkondisi) { $where[] = 'a.kondisi=?';       $params[] = $fkondisi; }
+if ($fstatus)  { $where[] = 'a.status_pakai=?';  $params[] = $fstatus; }
 if ($search) {
     $where[]  = '(a.no_inventaris LIKE ? OR a.nama_aset LIKE ? OR a.merek LIKE ? OR b.nama LIKE ? OR u.nama LIKE ?)';
     $params   = array_merge($params, array_fill(0, 5, "%$search%"));
@@ -133,11 +136,16 @@ $st_data = $pdo->prepare("
 $st_data->execute($params);
 $asets = $st_data->fetchAll();
 
-// Stats
+// Stats kondisi
 $stats_kondisi = [];
 foreach ($pdo->query("SELECT kondisi, COUNT(*) n FROM aset_it GROUP BY kondisi")->fetchAll() as $r)
     $stats_kondisi[$r['kondisi']] = $r['n'];
 $total_all = array_sum($stats_kondisi);
+
+// Stats status_pakai
+$stats_pakai = [];
+foreach ($pdo->query("SELECT status_pakai, COUNT(*) n FROM aset_it GROUP BY status_pakai")->fetchAll() as $r)
+    $stats_pakai[$r['status_pakai']] = $r['n'];
 
 // Dropdown data
 $bagian_list = $pdo->query("SELECT id,nama,kode,lokasi FROM bagian WHERE status='aktif' ORDER BY urutan,nama")->fetchAll();
@@ -155,12 +163,64 @@ include '../includes/header.php';
 .kb-perbaikan{background:#fef9c3;color:#854d0e;}
 .kb-tidak    {background:#f1f5f9;color:#64748b;}
 
+/* ── Status Pakai badges ── */
+.sp-terpakai  {background:#dbeafe;color:#1e40af;}
+.sp-tidak     {background:#d1fae5;color:#065f46;}
+.sp-dipinjam  {background:#fef3c7;color:#92400e;}
+
+/* ── Row highlight untuk "Tidak Terpakai" ── */
+tr.row-tidak-terpakai {
+    background: linear-gradient(90deg, #f0fdf4 0%, #f7fffe 100%) !important;
+    border-left: 4px solid #22c55e !important;
+    position: relative;
+}
+tr.row-tidak-terpakai td {
+    background: transparent !important;
+    opacity: 0.82;
+}
+tr.row-tidak-terpakai td:first-child {
+    border-left: 4px solid #22c55e;
+}
+tr.row-tidak-terpakai .nama-aset-txt {
+    color: #6b7280 !important;
+    text-decoration: line-through;
+    text-decoration-color: #86efac;
+}
+tr.row-tidak-terpakai .inv-badge {
+    background: linear-gradient(135deg,#f0fdf4,#dcfce7) !important;
+    color: #15803d !important;
+    border-color: #86efac !important;
+    opacity: 0.8;
+}
+
+/* ── Row highlight untuk "Dipinjam" ── */
+tr.row-dipinjam {
+    background: linear-gradient(90deg, #fffbeb 0%, #fefce8 100%) !important;
+    border-left: 4px solid #f59e0b !important;
+}
+tr.row-dipinjam td {
+    background: transparent !important;
+}
+tr.row-dipinjam td:first-child {
+    border-left: 4px solid #f59e0b;
+}
+
 .inv-badge{font-family:'Courier New',monospace;font-size:11px;font-weight:700;background:linear-gradient(135deg,#eff6ff,#dbeafe);color:#1e40af;border:1px solid #bfdbfe;padding:2px 8px;border-radius:5px;white-space:nowrap;}
 
 .stat-card-aset{background:#fff;border-radius:8px;border:1px solid #e8ecf0;padding:14px 16px;display:flex;align-items:center;gap:12px;transition:box-shadow .2s;}
 .stat-card-aset:hover{box-shadow:0 4px 12px rgba(0,0,0,.07);}
+.stat-card-aset.active-filter{border-color:#26B99A;box-shadow:0 0 0 2px rgba(38,185,154,.2);}
 .stat-icon-aset{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
 .grs-modal{height:1px;background:#f0f0f0;margin:12px 0;}
+
+/* ── Status Pakai Info Banner ── */
+.sp-legend-bar {
+    display:flex;align-items:center;gap:16px;padding:9px 14px;
+    background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;
+    margin-bottom:14px;flex-wrap:wrap;
+}
+.sp-legend-item {display:flex;align-items:center;gap:6px;font-size:11.5px;color:#374151;}
+.sp-legend-dot  {width:12px;height:12px;border-radius:3px;flex-shrink:0;}
 
 /* ── Toggle Auto/Manual ── */
 .inv-toggle-wrap{display:flex;align-items:center;gap:8px;padding:7px 11px;border-radius:6px;background:#f8fafc;border:1px solid #e2e8f0;cursor:pointer;user-select:none;transition:all .18s;flex-shrink:0;}
@@ -178,6 +238,14 @@ include '../includes/header.php';
 .f-inp:focus{outline:none;border-color:#26B99A;box-shadow:0 0 0 3px rgba(38,185,154,.12);}
 .f-inp:disabled{background:#f8fafc;color:#94a3b8;cursor:not-allowed;}
 
+/* ── Status pakai select highlight ── */
+#f-status_pakai option[value="Tidak Terpakai"] { color: #065f46; background: #d1fae5; }
+#f-status_pakai option[value="Dipinjam"]       { color: #92400e; background: #fef3c7; }
+#f-status_pakai option[value="Terpakai"]       { color: #1e40af; background: #dbeafe; }
+#f-status_pakai.val-tidak { border-color: #22c55e; background: #f0fdf4; color: #065f46; }
+#f-status_pakai.val-dipinjam { border-color: #f59e0b; background: #fffbeb; color: #92400e; }
+#f-status_pakai.val-terpakai { border-color: #3b82f6; background: #eff6ff; color: #1e40af; }
+
 /* ── Dropdown Cetak ── */
 .cetak-drop-wrap{position:relative;display:inline-block;}
 .cetak-drop-menu{display:none;position:absolute;right:0;top:36px;z-index:9999;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.13);min-width:238px;overflow:hidden;}
@@ -193,6 +261,18 @@ include '../includes/header.php';
 .cdm-item-sm:hover{background:#f0fdf9;}
 .cdm-foot{padding:6px 13px;background:#f8fafc;border-top:1px solid #e2e8f0;}
 .cdm-foot-txt{font-size:10px;color:#94a3b8;}
+
+/* ── Filter tab status pakai ── */
+.sp-filter-tabs{display:flex;gap:5px;margin-bottom:10px;flex-wrap:wrap;}
+.sp-tab{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;font-size:11.5px;font-weight:600;text-decoration:none;border:1.5px solid transparent;transition:all .16s;cursor:pointer;}
+.sp-tab-all   {background:#f1f5f9;color:#475569;border-color:#e2e8f0;}
+.sp-tab-all.active   {background:#1e293b;color:#fff;border-color:#1e293b;}
+.sp-tab-terpakai{background:#eff6ff;color:#1e40af;border-color:#bfdbfe;}
+.sp-tab-terpakai.active{background:#1e40af;color:#fff;}
+.sp-tab-tidak {background:#f0fdf4;color:#065f46;border-color:#86efac;}
+.sp-tab-tidak.active {background:#16a34a;color:#fff;}
+.sp-tab-dipinjam{background:#fffbeb;color:#92400e;border-color:#fde68a;}
+.sp-tab-dipinjam.active{background:#d97706;color:#fff;}
 </style>
 
 <div class="page-header">
@@ -206,8 +286,8 @@ include '../includes/header.php';
 <div class="content">
   <?= showFlash() ?>
 
-  <!-- Stats -->
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px;">
+  <!-- Stats Kondisi -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px;">
     <div class="stat-card-aset">
       <div class="stat-icon-aset" style="background:#eff6ff;"><i class="fa fa-boxes-stacked" style="color:#3b82f6;"></i></div>
       <div><div style="font-size:20px;font-weight:800;color:#1e293b;"><?= $total_all ?></div><div style="font-size:11px;color:#94a3b8;">Total Aset</div></div>
@@ -220,11 +300,41 @@ include '../includes/header.php';
     <?php endforeach; ?>
   </div>
 
+  <!-- Stats Status Pemakaian -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px;">
+    <?php foreach([
+      ['Terpakai',      '#dbeafe','#1d4ed8','fa-circle-dot',     'Sedang digunakan'],
+      ['Tidak Terpakai','#d1fae5','#065f46','fa-circle',         'Belum/tidak digunakan'],
+      ['Dipinjam',      '#fef3c7','#92400e','fa-hand-holding',   'Sedang dipinjam'],
+    ] as [$k,$bg,$ic,$ico,$sub]):
+      $isActive = ($fstatus === $k);
+    ?>
+    <a href="?status_pakai=<?= urlencode($isActive ? '' : $k) ?>&kondisi=<?= urlencode($fkondisi) ?>&q=<?= urlencode($search) ?>"
+       class="stat-card-aset <?= $isActive?'active-filter':'' ?>" style="text-decoration:none;cursor:pointer;">
+      <div class="stat-icon-aset" style="background:<?= $bg ?>;"><i class="fa <?= $ico ?>" style="color:<?= $ic ?>;"></i></div>
+      <div>
+        <div style="font-size:20px;font-weight:800;color:#1e293b;"><?= $stats_pakai[$k]??0 ?></div>
+        <div style="font-size:11px;color:#94a3b8;"><?= $k ?></div>
+        <div style="font-size:10px;color:#cbd5e1;margin-top:1px;"><?= $sub ?></div>
+      </div>
+      <?php if($isActive): ?><i class="fa fa-check-circle" style="margin-left:auto;color:#26B99A;font-size:14px;"></i><?php endif; ?>
+    </a>
+    <?php endforeach; ?>
+  </div>
+
+  <!-- Legend kode warna baris -->
+  <div class="sp-legend-bar">
+    <span style="font-size:11px;font-weight:700;color:#374151;margin-right:4px;"><i class="fa fa-palette" style="color:#26B99A;"></i> Keterangan warna baris:</span>
+    <div class="sp-legend-item"><div class="sp-legend-dot" style="background:#dbeafe;border:1.5px solid #93c5fd;"></div> Baris normal = <strong>Terpakai</strong></div>
+    <div class="sp-legend-item"><div class="sp-legend-dot" style="background:#d1fae5;border:1.5px solid #22c55e;"></div> Baris hijau + <s>coret</s> = <strong>Tidak Terpakai</strong></div>
+    <div class="sp-legend-item"><div class="sp-legend-dot" style="background:#fef3c7;border:1.5px solid #f59e0b;"></div> Baris kuning = <strong>Dipinjam</strong></div>
+  </div>
+
   <!-- Quick filter kondisi -->
   <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
     <?php foreach([''=> 'Semua','Baik'=>'Baik','Rusak'=>'Rusak','Dalam Perbaikan'=>'Dalam Perbaikan','Tidak Aktif'=>'Tidak Aktif'] as $v=>$l):
       $cnt=$v===''?$total_all:($stats_kondisi[$v]??0); ?>
-    <a href="?kondisi=<?= urlencode($v) ?>" class="btn <?= $fkondisi===$v?'btn-primary':'btn-default' ?>" style="font-size:12px;">
+    <a href="?kondisi=<?= urlencode($v) ?>&status_pakai=<?= urlencode($fstatus) ?>" class="btn <?= $fkondisi===$v?'btn-primary':'btn-default' ?>" style="font-size:12px;">
       <?= $l ?> <span style="background:<?= $fkondisi===$v?'rgba(255,255,255,.3)':'#ddd' ?>;border-radius:9px;padding:0 6px;font-size:10px;"><?= $cnt ?></span>
     </a>
     <?php endforeach; ?>
@@ -236,6 +346,7 @@ include '../includes/header.php';
       <div class="tbl-tools-l">
         <form method="GET" id="sf-aset" style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;">
           <?php if ($fkondisi): ?><input type="hidden" name="kondisi" value="<?= clean($fkondisi) ?>"><?php endif; ?>
+          <?php if ($fstatus):  ?><input type="hidden" name="status_pakai" value="<?= clean($fstatus) ?>"><?php endif; ?>
           <input type="text" name="q" value="<?= clean($search) ?>" class="inp-search" placeholder="Cari nama, no. inv, bagian…" onchange="document.getElementById('sf-aset').submit()">
           <select name="kategori" class="sel-filter" onchange="document.getElementById('sf-aset').submit()">
             <option value="">Semua Kategori</option>
@@ -243,11 +354,18 @@ include '../includes/header.php';
             <option value="<?= clean($k) ?>" <?= $fk===$k?'selected':'' ?>><?= clean($k) ?></option>
             <?php endforeach; ?>
           </select>
-          <?php if($search||$fk): ?><a href="?kondisi=<?= urlencode($fkondisi) ?>" class="btn btn-default btn-sm"><i class="fa fa-times"></i></a><?php endif; ?>
+          <!-- Filter Status Pakai inline -->
+          <select name="status_pakai" class="sel-filter" onchange="document.getElementById('sf-aset').submit()" style="border-color:<?= $fstatus?'#26B99A':'#d1d5db' ?>;">
+            <option value="">Semua Status</option>
+            <option value="Terpakai"       <?= $fstatus==='Terpakai'       ?'selected':'' ?>>🔵 Terpakai</option>
+            <option value="Tidak Terpakai" <?= $fstatus==='Tidak Terpakai' ?'selected':'' ?>>🟢 Tidak Terpakai</option>
+            <option value="Dipinjam"       <?= $fstatus==='Dipinjam'       ?'selected':'' ?>>🟡 Dipinjam</option>
+          </select>
+          <?php if($search||$fk||$fstatus): ?><a href="?kondisi=<?= urlencode($fkondisi) ?>" class="btn btn-default btn-sm"><i class="fa fa-times"></i> Reset</a><?php endif; ?>
         </form>
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
-        <span class="tbl-info"><?= $total ?> aset</span>
+        <span class="tbl-info"><?= $total ?> aset<?php if($fstatus): ?> <span style="background:#d1fae5;color:#065f46;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700;"><?= clean($fstatus) ?></span><?php endif; ?></span>
 
         <!-- ══ DROPDOWN CETAK LAPORAN ══ -->
         <div class="cetak-drop-wrap" id="wrap-cetak">
@@ -258,45 +376,32 @@ include '../includes/header.php';
             <i class="fa fa-chevron-down" style="font-size:9px;margin-left:3px;"></i>
           </button>
           <div class="cetak-drop-menu" id="cetak-drop">
-
-            <!-- Header -->
             <div class="cdm-head">
               <div class="cdm-head-txt"><i class="fa fa-file-pdf" style="color:#ef4444;margin-right:5px;"></i> Pilih Jenis Laporan PDF</div>
             </div>
-
-            <!-- Semua Aset -->
             <a href="<?= APP_URL ?>/pages/cetak_aset_it.php?mode=semua" target="_blank" class="cdm-item">
-              <div class="cdm-icon" style="background:#eff6ff;">
-                <i class="fa fa-boxes-stacked" style="color:#1d4ed8;"></i>
-              </div>
-              <div>
-                <div style="font-size:12.5px;font-weight:700;color:#1e293b;">Semua Aset IT</div>
-                <div style="font-size:10.5px;color:#94a3b8;">Laporan lengkap seluruh kategori</div>
-              </div>
+              <div class="cdm-icon" style="background:#eff6ff;"><i class="fa fa-boxes-stacked" style="color:#1d4ed8;"></i></div>
+              <div><div style="font-size:12.5px;font-weight:700;color:#1e293b;">Semua Aset IT</div><div style="font-size:10.5px;color:#94a3b8;">Laporan lengkap seluruh kategori</div></div>
               <i class="fa fa-arrow-up-right-from-square" style="margin-left:auto;color:#cbd5e1;font-size:10px;"></i>
             </a>
-
-            <!-- Per Kategori -->
+            <!-- Tidak Terpakai -->
+            <a href="<?= APP_URL ?>/pages/cetak_aset_it.php?mode=semua&status_pakai=Tidak+Terpakai" target="_blank" class="cdm-item">
+              <div class="cdm-icon" style="background:#d1fae5;"><i class="fa fa-circle" style="color:#16a34a;"></i></div>
+              <div><div style="font-size:12.5px;font-weight:700;color:#1e293b;">Aset Tidak Terpakai</div><div style="font-size:10.5px;color:#94a3b8;">Daftar aset yang belum digunakan</div></div>
+              <i class="fa fa-arrow-up-right-from-square" style="margin-left:auto;color:#cbd5e1;font-size:10px;"></i>
+            </a>
             <?php if (!empty($kat_opts)): ?>
             <div class="cdm-section">Per Kategori</div>
             <?php
             $kat_icons = [
-                'Laptop'          => ['fa-laptop',         '#6366f1'],
-                'Desktop'         => ['fa-desktop',        '#0891b2'],
-                'Printer'         => ['fa-print',          '#d97706'],
-                'Scanner'         => ['fa-scanner',        '#059669'],
-                'Server'          => ['fa-server',         '#7c3aed'],
-                'Switch'          => ['fa-network-wired',  '#0f766e'],
-                'Router'          => ['fa-router',         '#b45309'],
-                'Access Point'    => ['fa-wifi',           '#16a34a'],
-                'Monitor'         => ['fa-display',        '#2563eb'],
-                'Keyboard'        => ['fa-keyboard',       '#475569'],
-                'Mouse'           => ['fa-computer-mouse', '#475569'],
-                'UPS'             => ['fa-battery-full',   '#ca8a04'],
-                'Proyektor'       => ['fa-projector',      '#9333ea'],
-                'Kamera IP'       => ['fa-camera',         '#dc2626'],
-                'Telepon'         => ['fa-phone',          '#0284c7'],
-                'Tablet'          => ['fa-tablet',         '#7c3aed'],
+                'Laptop'=>['fa-laptop','#6366f1'],'Desktop'=>['fa-desktop','#0891b2'],
+                'Printer'=>['fa-print','#d97706'],'Scanner'=>['fa-scanner','#059669'],
+                'Server'=>['fa-server','#7c3aed'],'Switch'=>['fa-network-wired','#0f766e'],
+                'Router'=>['fa-router','#b45309'],'Access Point'=>['fa-wifi','#16a34a'],
+                'Monitor'=>['fa-display','#2563eb'],'Keyboard'=>['fa-keyboard','#475569'],
+                'Mouse'=>['fa-computer-mouse','#475569'],'UPS'=>['fa-battery-full','#ca8a04'],
+                'Proyektor'=>['fa-projector','#9333ea'],'Kamera IP'=>['fa-camera','#dc2626'],
+                'Telepon'=>['fa-phone','#0284c7'],'Tablet'=>['fa-tablet','#7c3aed'],
             ];
             foreach ($kat_opts as $k):
                 [$ico, $col] = $kat_icons[$k] ?? ['fa-tag', '#26B99A'];
@@ -306,20 +411,17 @@ include '../includes/header.php';
                 <i class="fa <?= $ico ?>" style="color:<?= $col ?>;font-size:11px;"></i>
               </div>
               <span style="font-weight:600;"><?= clean($k) ?></span>
-              <span style="margin-left:auto;font-size:10.5px;color:#94a3b8;"><?= count(array_filter($asets, fn($a) => $a['kategori'] === $k)) ?: '' ?></span>
-              <i class="fa fa-arrow-up-right-from-square" style="color:#e2e8f0;font-size:9px;margin-left:4px;"></i>
+              <i class="fa fa-arrow-up-right-from-square" style="color:#e2e8f0;font-size:9px;margin-left:auto;"></i>
             </a>
             <?php endforeach; ?>
             <?php endif; ?>
-
-            <!-- Filter Kondisi -->
             <div class="cdm-section" style="margin-top:2px;">Filter Kondisi</div>
             <?php
             $kond_conf = [
-                'Baik'            => ['fa-circle-check', '#16a34a', '#dcfce7'],
-                'Rusak'           => ['fa-circle-xmark', '#dc2626', '#fee2e2'],
-                'Dalam Perbaikan' => ['fa-wrench',       '#d97706', '#fef9c3'],
-                'Tidak Aktif'     => ['fa-ban',          '#64748b', '#f1f5f9'],
+                'Baik'=>['fa-circle-check','#16a34a','#dcfce7'],
+                'Rusak'=>['fa-circle-xmark','#dc2626','#fee2e2'],
+                'Dalam Perbaikan'=>['fa-wrench','#d97706','#fef9c3'],
+                'Tidak Aktif'=>['fa-ban','#64748b','#f1f5f9'],
             ];
             foreach ($kond_conf as $kond => [$kico, $kcol, $kbg]): ?>
             <a href="<?= APP_URL ?>/pages/cetak_aset_it.php?mode=semua&kondisi=<?= urlencode($kond) ?>" target="_blank" class="cdm-item-sm">
@@ -330,14 +432,7 @@ include '../includes/header.php';
               <span style="margin-left:auto;font-size:10.5px;background:<?= $kbg ?>;color:<?= $kcol ?>;padding:1px 7px;border-radius:9px;font-weight:700;"><?= $stats_kondisi[$kond] ?? 0 ?></span>
             </a>
             <?php endforeach; ?>
-
-            <!-- Footer -->
-            <div class="cdm-foot">
-              <div class="cdm-foot-txt">
-                <i class="fa fa-circle-info" style="color:#26B99A;"></i>
-                Laporan terbuka di tab baru sebagai PDF
-              </div>
-            </div>
+            <div class="cdm-foot"><div class="cdm-foot-txt"><i class="fa fa-circle-info" style="color:#26B99A;"></i> Laporan terbuka di tab baru sebagai PDF</div></div>
           </div>
         </div>
         <!-- ══ END DROPDOWN CETAK ══ -->
@@ -361,6 +456,7 @@ include '../includes/header.php';
             <th>Serial Number</th>
             <th>Lokasi / Bagian</th>
             <th>Penanggung Jawab</th>
+            <th>Status Pakai</th>
             <th>Kondisi</th>
             <th>Tgl Beli</th>
             <th>Garansi s/d</th>
@@ -369,7 +465,7 @@ include '../includes/header.php';
         </thead>
         <tbody>
           <?php if(empty($asets)): ?>
-          <tr><td colspan="12" class="td-empty"><i class="fa fa-server"></i> Tidak ada data aset</td></tr>
+          <tr><td colspan="13" class="td-empty"><i class="fa fa-server"></i> Tidak ada data aset</td></tr>
           <?php else: $no=$offset+1; foreach($asets as $a):
             $g_exp  = $a['garansi_sampai'] && strtotime($a['garansi_sampai'])<time();
             $g_soon = $a['garansi_sampai'] && !$g_exp && strtotime($a['garansi_sampai'])<strtotime('+30 days');
@@ -377,18 +473,36 @@ include '../includes/header.php';
             $kico   = ['Baik'=>'fa-circle-check','Rusak'=>'fa-circle-xmark','Dalam Perbaikan'=>'fa-wrench','Tidak Aktif'=>'fa-ban'];
             $kc     = $kmap[$a['kondisi']] ?? 'kb-tidak';
             $ki     = $kico[$a['kondisi']] ?? 'fa-circle';
+
+            // Status Pakai
+            $sp     = $a['status_pakai'] ?? 'Terpakai';
+            $spmap  = ['Terpakai'=>'sp-terpakai','Tidak Terpakai'=>'sp-tidak','Dipinjam'=>'sp-dipinjam'];
+            $spico  = ['Terpakai'=>'fa-circle-dot','Tidak Terpakai'=>'fa-circle','Dipinjam'=>'fa-hand-holding'];
+            $spc    = $spmap[$sp] ?? 'sp-terpakai';
+            $spi    = $spico[$sp] ?? 'fa-circle-dot';
+
+            // Row CSS class
+            $row_class = '';
+            if ($sp === 'Tidak Terpakai') $row_class = 'row-tidak-terpakai';
+            elseif ($sp === 'Dipinjam')   $row_class = 'row-dipinjam';
+
             $lokasi_disp = $a['bagian_nama']
                 ? ($a['bagian_kode']?'['.clean($a['bagian_kode']).'] ':'').clean($a['bagian_nama'])
                 : clean($a['lokasi']?:'—');
             $pj_disp = $a['pj_nama_db'] ?: clean($a['penanggung_jawab']?:'—');
             $pj_init = $a['pj_nama_db'] ? getInitials($a['pj_nama_db']) : ($a['penanggung_jawab']?getInitials($a['penanggung_jawab']):'?');
           ?>
-          <tr>
+          <tr class="<?= $row_class ?>">
             <td style="color:#bbb;"><?= $no++ ?></td>
             <td><span class="inv-badge"><?= clean($a['no_inventaris']) ?></span></td>
             <td>
-              <div style="font-weight:600;color:#1e293b;font-size:13px;"><?= clean($a['nama_aset']) ?></div>
+              <div class="nama-aset-txt" style="font-weight:600;color:#1e293b;font-size:13px;"><?= clean($a['nama_aset']) ?></div>
               <?php if($a['keterangan']): ?><small style="color:#aaa;font-size:10.5px;"><?= mb_strimwidth(clean($a['keterangan']),0,40,'…') ?></small><?php endif; ?>
+              <?php if($sp === 'Tidak Terpakai'): ?>
+              <div style="margin-top:2px;"><span style="font-size:9.5px;background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:3px;font-weight:700;letter-spacing:.3px;"><i class="fa fa-circle" style="font-size:7px;"></i> TIDAK TERPAKAI</span></div>
+              <?php elseif($sp === 'Dipinjam'): ?>
+              <div style="margin-top:2px;"><span style="font-size:9.5px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:3px;font-weight:700;letter-spacing:.3px;"><i class="fa fa-hand-holding" style="font-size:7px;"></i> DIPINJAM</span></div>
+              <?php endif; ?>
             </td>
             <td style="font-size:11px;"><?= clean($a['kategori']?:'—') ?></td>
             <td style="font-size:12px;"><span style="font-weight:600;"><?= clean($a['merek']?:'—') ?></span><?php if($a['model_aset']): ?><br><small style="color:#aaa;"><?= clean($a['model_aset']) ?></small><?php endif; ?></td>
@@ -407,6 +521,12 @@ include '../includes/header.php';
                 </div>
               </div>
               <?php else: ?><span class="text-muted">—</span><?php endif; ?>
+            </td>
+            <!-- STATUS PAKAI COLUMN -->
+            <td>
+              <span class="kondisi-badge <?= $spc ?>">
+                <i class="fa <?= $spi ?>"></i> <?= clean($sp) ?>
+              </span>
             </td>
             <td><span class="kondisi-badge <?= $kc ?>"><i class="fa <?= $ki ?>"></i> <?= clean($a['kondisi']) ?></span></td>
             <td style="font-size:11px;color:#94a3b8;white-space:nowrap;">
@@ -471,8 +591,8 @@ include '../includes/header.php';
 
     <!-- Form Body -->
     <form method="POST" action="<?= APP_URL ?>/pages/aset_it.php" id="form-aset">
-      <input type="hidden" name="_action" id="f-action" value="tambah">
-      <input type="hidden" name="id"       id="f-id"     value="">
+      <input type="hidden" name="_action"  id="f-action"   value="tambah">
+      <input type="hidden" name="id"       id="f-id"       value="">
       <input type="hidden" name="auto_inv" id="f-auto-inv" value="1">
 
       <div style="padding:18px 20px;max-height:72vh;overflow-y:auto;">
@@ -480,17 +600,13 @@ include '../includes/header.php';
         <!-- ① No. Inventaris + Toggle Auto/Manual -->
         <div style="margin-bottom:14px;">
           <label class="f-label">No. Inventaris <span style="color:#ef4444;">*</span></label>
-
           <div style="display:flex;align-items:center;gap:9px;">
-            <!-- Input -->
             <div style="flex:1;position:relative;">
               <input type="text" name="no_inventaris" id="f-no_inventaris" class="f-inp"
                 placeholder="Akan digenerate otomatis…"
                 style="font-family:'Courier New',monospace;padding-right:36px;" disabled>
               <i id="inv-icon" class="fa fa-lock" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:12px;pointer-events:none;"></i>
             </div>
-
-            <!-- Toggle Switch -->
             <label class="inv-toggle-wrap" title="Aktifkan untuk input manual">
               <label class="inv-sw" style="margin:0;">
                 <input type="checkbox" id="toggle-manual-inv" onchange="toggleInv(this)" style="position:absolute;opacity:0;width:0;height:0;">
@@ -502,8 +618,6 @@ include '../includes/header.php';
               </div>
             </label>
           </div>
-
-          <!-- Preview nomor auto -->
           <div id="inv-preview" style="margin-top:5px;font-size:10.5px;color:#64748b;">
             <i class="fa fa-circle-info" style="color:#26B99A;"></i>
             Nomor akan digenerate: <span id="inv-preview-val" style="font-family:monospace;color:#1e40af;font-weight:700;">memuat…</span>
@@ -537,6 +651,21 @@ include '../includes/header.php';
           </div>
         </div>
 
+        <!-- ③b STATUS PAKAI — full width dengan visual indicator -->
+        <div style="margin-bottom:12px;">
+          <label class="f-label"><i class="fa fa-circle-dot" style="color:#26B99A;"></i> Status Pemakaian <span style="color:#ef4444;">*</span></label>
+          <select name="status_pakai" id="f-status_pakai" class="f-inp val-terpakai" onchange="updateStatusPakaiStyle(this)">
+            <option value="Terpakai">🔵 Terpakai — Aset sedang aktif digunakan</option>
+            <option value="Tidak Terpakai">🟢 Tidak Terpakai — Aset belum/tidak digunakan</option>
+            <option value="Dipinjam">🟡 Dipinjam — Aset sedang dipinjam</option>
+          </select>
+          <!-- Preview indikator -->
+          <div id="sp-preview-bar" style="margin-top:6px;padding:7px 11px;border-radius:5px;font-size:11.5px;font-weight:600;display:flex;align-items:center;gap:7px;background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;">
+            <i id="sp-preview-icon" class="fa fa-circle-dot"></i>
+            <span id="sp-preview-txt">Baris tabel akan tampil normal (putih)</span>
+          </div>
+        </div>
+
         <!-- ④ Merek + Model -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
           <div>
@@ -557,15 +686,13 @@ include '../includes/header.php';
 
         <div class="grs-modal"></div>
 
-        <!-- ⑥ Lokasi / Bagian — dropdown dari tabel bagian -->
+        <!-- ⑥ Lokasi / Bagian -->
         <div style="margin-bottom:12px;">
           <label class="f-label"><i class="fa fa-building" style="color:#26B99A;"></i> Lokasi / Bagian</label>
           <select name="bagian_id" id="f-bagian_id" class="f-inp" onchange="updateLokasiHint(this)">
             <option value="">— Pilih Bagian / Ruangan —</option>
             <?php foreach($bagian_list as $b): ?>
-            <option value="<?= $b['id'] ?>"
-              data-lokasi="<?= clean($b['lokasi']??'') ?>"
-              data-kode="<?= clean($b['kode']??'') ?>">
+            <option value="<?= $b['id'] ?>" data-lokasi="<?= clean($b['lokasi']??'') ?>" data-kode="<?= clean($b['kode']??'') ?>">
               <?= ($b['kode']?'['.$b['kode'].'] ':'').clean($b['nama']) ?>
             </option>
             <?php endforeach; ?>
@@ -575,15 +702,13 @@ include '../includes/header.php';
           </div>
         </div>
 
-        <!-- ⑦ Penanggung Jawab — dropdown dari tabel users -->
+        <!-- ⑦ Penanggung Jawab -->
         <div style="margin-bottom:12px;">
           <label class="f-label"><i class="fa fa-user" style="color:#26B99A;"></i> Penanggung Jawab</label>
           <select name="pj_user_id" id="f-pj_user_id" class="f-inp" onchange="updatePjHint(this)">
             <option value="">— Pilih Pengguna / PIC —</option>
             <?php foreach($users_list as $u): ?>
-            <option value="<?= $u['id'] ?>"
-              data-divisi="<?= clean($u['divisi']??'') ?>"
-              data-role="<?= clean($u['role']) ?>">
+            <option value="<?= $u['id'] ?>" data-divisi="<?= clean($u['divisi']??'') ?>" data-role="<?= clean($u['role']) ?>">
               <?= clean($u['nama']) ?><?php if($u['divisi']): ?> — <?= clean($u['divisi']) ?><?php endif; ?>
             </option>
             <?php endforeach; ?>
@@ -660,19 +785,44 @@ include '../includes/header.php';
 <script>
 const APP_URL = '<?= APP_URL ?>';
 
-/* ── Dropdown Cetak Laporan ──────────────────────────────────────── */
+/* ── Dropdown Cetak ──────────────────────────────────────────────── */
 function toggleCetakDrop(e) {
     e.stopPropagation();
-    const menu = document.getElementById('cetak-drop');
-    menu.classList.toggle('open');
+    document.getElementById('cetak-drop').classList.toggle('open');
 }
-// Klik di luar → tutup
 document.addEventListener('click', function(e) {
     const wrap = document.getElementById('wrap-cetak');
-    if (wrap && !wrap.contains(e.target)) {
+    if (wrap && !wrap.contains(e.target))
         document.getElementById('cetak-drop').classList.remove('open');
-    }
 });
+
+/* ── Status Pakai: style select + preview bar ────────────────────── */
+function updateStatusPakaiStyle(sel) {
+    const val     = sel.value;
+    const bar     = document.getElementById('sp-preview-bar');
+    const icon    = document.getElementById('sp-preview-icon');
+    const txt     = document.getElementById('sp-preview-txt');
+
+    // Reset classes
+    sel.className = 'f-inp';
+
+    if (val === 'Tidak Terpakai') {
+        sel.classList.add('val-tidak');
+        bar.style.cssText = 'margin-top:6px;padding:7px 11px;border-radius:5px;font-size:11.5px;font-weight:600;display:flex;align-items:center;gap:7px;background:#d1fae5;color:#065f46;border:1px solid #86efac;';
+        icon.className = 'fa fa-circle';
+        txt.textContent = 'Baris tabel akan berwarna HIJAU + nama aset dicoret';
+    } else if (val === 'Dipinjam') {
+        sel.classList.add('val-dipinjam');
+        bar.style.cssText = 'margin-top:6px;padding:7px 11px;border-radius:5px;font-size:11.5px;font-weight:600;display:flex;align-items:center;gap:7px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;';
+        icon.className = 'fa fa-hand-holding';
+        txt.textContent = 'Baris tabel akan berwarna KUNING';
+    } else {
+        sel.classList.add('val-terpakai');
+        bar.style.cssText = 'margin-top:6px;padding:7px 11px;border-radius:5px;font-size:11.5px;font-weight:600;display:flex;align-items:center;gap:7px;background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;';
+        icon.className = 'fa fa-circle-dot';
+        txt.textContent = 'Baris tabel akan tampil normal (putih)';
+    }
+}
 
 /* ── Toggle Auto / Manual No. Inventaris ─────────────────────────── */
 function toggleInv(chk) {
@@ -684,54 +834,37 @@ function toggleInv(chk) {
     const autoInp = document.getElementById('f-auto-inv');
 
     if (chk.checked) {
-        // MANUAL
-        inp.disabled    = false;
-        inp.placeholder = 'Ketik nomor inventaris…';
-        inp.value       = '';
-        inp.focus();
-        icon.className  = 'fa fa-pen';
-        icon.style.color= '#26B99A';
-        lbl.textContent = 'Manual';
-        sub.textContent = 'Klik untuk kembali auto';
-        preview.style.display = 'none';
-        autoInp.value   = '0';
+        inp.disabled = false; inp.placeholder = 'Ketik nomor inventaris…'; inp.value = ''; inp.focus();
+        icon.className = 'fa fa-pen'; icon.style.color = '#26B99A';
+        lbl.textContent = 'Manual'; sub.textContent = 'Klik untuk kembali auto';
+        preview.style.display = 'none'; autoInp.value = '0';
     } else {
-        // AUTO
-        inp.disabled    = true;
-        inp.placeholder = 'Akan digenerate otomatis…';
-        inp.value       = '';
-        icon.className  = 'fa fa-lock';
-        icon.style.color= '#94a3b8';
-        lbl.textContent = 'Auto';
-        sub.textContent = 'Klik untuk manual';
-        preview.style.display = '';
-        autoInp.value   = '1';
+        inp.disabled = true; inp.placeholder = 'Akan digenerate otomatis…'; inp.value = '';
+        icon.className = 'fa fa-lock'; icon.style.color = '#94a3b8';
+        lbl.textContent = 'Auto'; sub.textContent = 'Klik untuk manual';
+        preview.style.display = ''; autoInp.value = '1';
         previewNoInv();
     }
 }
-
 function previewNoInv() {
     fetch(APP_URL + '/pages/aset_it.php?preview_no_inv=1')
         .then(r => r.json())
         .then(d => { document.getElementById('inv-preview-val').textContent = d.no; });
 }
 
-/* ── Hint lokasi dari pilihan bagian ─────────────────────────────── */
+/* ── Hint lokasi ─────────────────────────────────────────────────── */
 function updateLokasiHint(sel) {
     const lok  = sel.options[sel.selectedIndex].dataset.lokasi || '';
     const hint = document.getElementById('lokasi-hint');
-    if (lok && sel.value) {
-        document.getElementById('lokasi-hint-val').textContent = lok;
-        hint.style.display = '';
-    } else { hint.style.display = 'none'; }
+    if (lok && sel.value) { document.getElementById('lokasi-hint-val').textContent = lok; hint.style.display = ''; }
+    else { hint.style.display = 'none'; }
 }
 
-/* ── Hint divisi/role PJ ─────────────────────────────────────────── */
+/* ── Hint PJ ─────────────────────────────────────────────────────── */
 function updatePjHint(sel) {
-    const opt    = sel.options[sel.selectedIndex];
-    const divisi = opt.dataset.divisi || '';
-    const role   = opt.dataset.role   || '';
-    const hint   = document.getElementById('pj-hint');
+    const opt = sel.options[sel.selectedIndex];
+    const divisi = opt.dataset.divisi || '', role = opt.dataset.role || '';
+    const hint = document.getElementById('pj-hint');
     if (sel.value && (divisi || role)) {
         let txt = [];
         if (role)   txt.push('Role: ' + role.charAt(0).toUpperCase() + role.slice(1));
@@ -759,10 +892,9 @@ function editAset(id) {
             document.getElementById('f-action').value = 'edit';
             document.getElementById('f-id').value     = d.id;
 
-            // Saat edit → selalu mode manual (isi no. inventaris existing)
+            // Mode manual saat edit
             const chk = document.getElementById('toggle-manual-inv');
-            chk.checked = true;
-            toggleInv(chk);
+            chk.checked = true; toggleInv(chk);
             document.getElementById('f-no_inventaris').value = d.no_inventaris || '';
 
             document.getElementById('f-nama_aset').value      = d.nama_aset     || '';
@@ -776,15 +908,18 @@ function editAset(id) {
             document.getElementById('f-garansi_sampai').value = d.garansi_sampai|| '';
             document.getElementById('f-keterangan').value     = d.keterangan    || '';
 
-            // Bagian dropdown
-            const sBagian = document.getElementById('f-bagian_id');
-            sBagian.value = d.bagian_id || '';
-            updateLokasiHint(sBagian);
+            // Status Pakai
+            const spSel = document.getElementById('f-status_pakai');
+            spSel.value = d.status_pakai || 'Terpakai';
+            updateStatusPakaiStyle(spSel);
 
-            // PJ dropdown
+            // Bagian
+            const sBagian = document.getElementById('f-bagian_id');
+            sBagian.value = d.bagian_id || ''; updateLokasiHint(sBagian);
+
+            // PJ
             const sPj = document.getElementById('f-pj_user_id');
-            sPj.value = d.pj_user_id || '';
-            updatePjHint(sPj);
+            sPj.value = d.pj_user_id || ''; updatePjHint(sPj);
 
             openModal('m-tambah-aset');
         });
@@ -797,27 +932,28 @@ function hapusAset(id, nama) {
     openModal('m-hapus-aset');
 }
 
-/* ── Tutup & reset modal ─────────────────────────────────────────── */
+/* ── Tutup & reset ───────────────────────────────────────────────── */
 function tutupModal() {
     closeModal('m-tambah-aset');
     resetFormAset();
 }
 function resetFormAset() {
     document.getElementById('form-aset').reset();
-    document.getElementById('f-action').value              = 'tambah';
-    document.getElementById('f-id').value                  = '';
-    document.getElementById('modal-title').textContent     = 'Tambah Aset IT Baru';
-    document.getElementById('modal-icon').className        = 'fa fa-plus';
-    document.getElementById('btn-submit-label').textContent= 'Simpan Aset';
-    // Reset ke mode Auto
+    document.getElementById('f-action').value               = 'tambah';
+    document.getElementById('f-id').value                   = '';
+    document.getElementById('modal-title').textContent      = 'Tambah Aset IT Baru';
+    document.getElementById('modal-icon').className         = 'fa fa-plus';
+    document.getElementById('btn-submit-label').textContent = 'Simpan Aset';
+    // Reset ke Auto
     const chk = document.getElementById('toggle-manual-inv');
-    chk.checked = false;
-    toggleInv(chk);
+    chk.checked = false; toggleInv(chk);
     document.getElementById('lokasi-hint').style.display = 'none';
     document.getElementById('pj-hint').style.display     = 'none';
+    // Reset status pakai
+    const spSel = document.getElementById('f-status_pakai');
+    spSel.value = 'Terpakai'; updateStatusPakaiStyle(spSel);
 }
 
-// Klik backdrop → tutup
 document.getElementById('m-tambah-aset').addEventListener('click', function(e) {
     if (e.target === this) tutupModal();
 });
