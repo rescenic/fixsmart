@@ -81,7 +81,6 @@ body::before{content:'';position:absolute;inset:0;background:repeating-linear-gr
 .wa-group-box {
   margin-top: 20px;
 }
-
 .wa-group-link {
   display: inline-flex;
   align-items: center;
@@ -94,22 +93,45 @@ body::before{content:'';position:absolute;inset:0;background:repeating-linear-gr
   text-decoration: none;
   transition: 0.2s ease;
 }
-
 .wa-group-link:hover {
   background: #1ebe5d;
   text-decoration: none;
   color: #fff;
 }
-
 .wa-group-link i {
   font-size: 18px;
 }
-
 .wa-group-desc {
   display: block;
   margin-top: 6px;
   font-size: 12px;
   color: #666;
+}
+.wa-qr-wrap {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.wa-qr-wrap img {
+  width: 110px;
+  height: 110px;
+  border-radius: 8px;
+  border: 2px solid #25D366;
+  object-fit: cover;
+  display: block;
+  flex-shrink: 0;
+}
+.wa-qr-wrap .wa-qr-info {
+  font-size: 11px;
+  color: rgba(255,255,255,.55);
+  line-height: 1.6;
+}
+.wa-qr-wrap .wa-qr-info strong {
+  display: block;
+  color: #25D366;
+  font-size: 12px;
+  margin-bottom: 3px;
 }
 </style>
 </head>
@@ -123,25 +145,35 @@ body::before{content:'';position:absolute;inset:0;background:repeating-linear-gr
     <h2>Sistem Order Layanan IT</h2>
     <p>Ajukan permintaan layanan IT Anda dengan mudah dan pantau statusnya secara real-time hingga selesai.</p>
     <ul class="feat">
-
       <li><i class="fa fa-check-circle"></i> Buat tiket order IT kapan saja</li>
       <li><i class="fa fa-check-circle"></i> Pantau status: Menunggu → Diproses → Selesai</li>
       <li><i class="fa fa-check-circle"></i> Notifikasi setiap perubahan status</li>
       <li><i class="fa fa-check-circle"></i> Riwayat & histori lengkap per tiket</li>
       <li><i class="fa fa-check-circle"></i> Pengukuran SLA otomatis</li>
+
       <div class="wa-group-box">
-  <a href="https://chat.whatsapp.com/JlLw0jaANMG0m1oAu7wYWP?mode=gi_t" 
-     target="_blank" 
-     class="wa-group-link">
-    <i class="fab fa-whatsapp"></i>
-    Gabung Grup WhatsApp FixSmart Helpdesk
-  </a>
-  <small class="wa-group-desc">
-    Dapatkan informasi, pengumuman update, dan bantuan cepat seputar aplikasi FixSmart.
-  </small>
-</div>
+        <a href="https://chat.whatsapp.com/JlLw0jaANMG0m1oAu7wYWP?mode=gi_t"
+           target="_blank"
+           class="wa-group-link">
+          <i class="fab fa-whatsapp"></i>
+          Gabung Grup WhatsApp FixSmart Helpdesk
+        </a>
+        <small class="wa-group-desc">
+          Dapatkan informasi, pengumuman update, dan bantuan cepat seputar aplikasi FixSmart.
+        </small>
+
+        <!-- QR Code Grup WA -->
+        <div class="wa-qr-wrap">
+          <img src="<?= APP_URL ?>/barcode_grup_wa.png" alt="QR Code Grup WhatsApp FixSmart">
+          <div class="wa-qr-info">
+            <strong>Scan QR Code</strong>
+            Arahkan kamera HP ke barcode ini untuk langsung bergabung ke grup WhatsApp FixSmart Helpdesk.
+          </div>
+        </div>
+
+      </div>
     </ul>
-    <div class="left-foot">© <?= date('Y') ?> <?= APP_NAME ?>. - 082177846209.</div>
+    <div class="left-foot">© <?= date('Y') ?> <?= APP_NAME ?>. M. Wira Sb.S. Kom - 082177846209.</div>
   </div>
   <div class="right">
     <h3>Selamat Datang</h3>
@@ -170,7 +202,6 @@ body::before{content:'';position:absolute;inset:0;background:repeating-linear-gr
     </form>
     <hr class="hr">
     <div class="reg-link">Belum punya akun? <a href="<?= APP_URL ?>/register.php">Daftar di sini</a></div>
-  
   </div>
 </div>
 <script>
