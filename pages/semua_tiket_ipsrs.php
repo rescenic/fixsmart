@@ -17,11 +17,10 @@ $page     = max(1, (int)($_GET['page']     ?? 1));
 $per_page = 15;
 $fs       = $_GET['status']    ?? '';
 $fp       = $_GET['prioritas'] ?? '';
-$fk       = (int)($_GET['kat'] ?? 0);   // cast int — aman dari SQL injection
+$fk       = (int)($_GET['kat'] ?? 0);
 $fj       = $_GET['jenis']     ?? '';
 $search   = trim($_GET['q']    ?? '');
 
-// Validasi nilai enum agar tidak bisa dimanipulasi
 $valid_status   = ['', 'menunggu', 'diproses', 'selesai', 'ditolak', 'tidak_bisa'];
 $valid_prioritas= ['', 'Tinggi', 'Sedang', 'Rendah'];
 $valid_jenis    = ['', 'Medis', 'Non-Medis'];
@@ -42,7 +41,6 @@ if ($search) {
 }
 $wsql = implode(' AND ', $where);
 
-// ── Hitung total ──────────────────────────────────────────────────────────────
 $st = $pdo->prepare("
     SELECT COUNT(*)
     FROM tiket_ipsrs t
@@ -55,7 +53,6 @@ $pages  = max(1, ceil($total / $per_page));
 $page   = min($page, $pages);
 $offset = ($page - 1) * $per_page;
 
-// ── Ambil data ────────────────────────────────────────────────────────────────
 $st = $pdo->prepare("
     SELECT t.*, k.nama AS kat_nama, k.jenis AS kat_jenis,
            u.nama AS req_nama, u.divisi,
@@ -73,19 +70,16 @@ $st = $pdo->prepare("
 $st->execute($params);
 $tikets = $st->fetchAll();
 
-// ── Kategori list ─────────────────────────────────────────────────────────────
 try {
     $kat_list = $pdo->query("SELECT id, nama, jenis FROM kategori_ipsrs ORDER BY jenis, nama")->fetchAll();
 } catch (Exception $e) { $kat_list = []; }
 
-// ── Stats per status ──────────────────────────────────────────────────────────
 $stats = [];
 try {
     $st2 = $pdo->query("SELECT status, COUNT(*) n FROM tiket_ipsrs GROUP BY status");
     foreach ($st2->fetchAll() as $r) $stats[$r['status']] = $r['n'];
 } catch (Exception $e) {}
 
-// ── Stats per jenis ───────────────────────────────────────────────────────────
 $stats_j = [];
 try {
     $st3 = $pdo->query("SELECT jenis_tiket, COUNT(*) n FROM tiket_ipsrs GROUP BY jenis_tiket");
@@ -147,7 +141,6 @@ include '../includes/header.php';
   <!-- ── Info bar Medis / Non-Medis ── -->
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
     <?php
-    // Build URL preserving all current filters except jenis
     $base_params = array_filter(['status' => $fs, 'prioritas' => $fp, 'kat' => $fk ?: '', 'q' => $search]);
     ?>
     <a href="?<?= http_build_query(array_merge($base_params, ['jenis' => 'Medis'])) ?>"
@@ -173,7 +166,6 @@ include '../includes/header.php';
   <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
     <?php foreach ([''=>'Semua','menunggu'=>'Menunggu','diproses'=>'Diproses','selesai'=>'Selesai','ditolak'=>'Ditolak','tidak_bisa'=>'Tidak Bisa'] as $v => $l):
       $cnt = ($v === '') ? array_sum($stats) : ($stats[$v] ?? 0);
-      // Build params preserving jenis + other filters except status
       $tab_params = array_filter(['jenis' => $fj, 'prioritas' => $fp, 'kat' => $fk ?: '', 'q' => $search]);
       if ($v !== '') $tab_params['status'] = $v;
     ?>
@@ -189,7 +181,6 @@ include '../includes/header.php';
     <div class="tbl-tools">
       <div class="tbl-tools-l">
         <form method="GET" id="sf" style="display:flex;gap:7px;flex-wrap:wrap;">
-          <!-- Preserve status & jenis via hidden input -->
           <?php if ($fs): ?><input type="hidden" name="status" value="<?= clean($fs) ?>"><?php endif; ?>
           <?php if ($fj): ?><input type="hidden" name="jenis"  value="<?= clean($fj) ?>"><?php endif; ?>
 
@@ -197,7 +188,6 @@ include '../includes/header.php';
                  placeholder="Cari tiket, judul, pemohon…"
                  onchange="this.form.submit()">
 
-          <!-- Filter Jenis — jika sudah ada filter jenis dari URL, tampilkan di form juga -->
           <?php if (!$fj): ?>
           <select name="jenis" class="sel-filter" onchange="this.form.submit()">
             <option value="">Semua Jenis</option>
@@ -239,7 +229,7 @@ include '../includes/header.php';
         <button type="button" onclick="bukaModalCetak()"
                 class="btn btn-default btn-sm"
                 style="border-color:#26B99A;color:#0f766e;font-weight:600;">
-          <i class="fa fa-print"></i> Cetak Laporan
+          <i class="fa fa-print"></i> Cetak / Export
         </button>
       </div>
     </div>
@@ -375,7 +365,7 @@ include '../includes/header.php';
 
 
 <!-- ════════════════════════════════════════════════════
-     MODAL CETAK LAPORAN IPSRS
+     MODAL CETAK / EXPORT LAPORAN IPSRS
 ════════════════════════════════════════════════════════ -->
 <div class="mc-overlay" id="mc-overlay" onclick="if(event.target===this)tutupModalCetak()">
   <div class="mc-box">
@@ -384,7 +374,7 @@ include '../includes/header.php';
       <div style="display:flex;align-items:center;">
         <div class="mc-head-icon"><i class="fa fa-print" style="color:#26B99A;font-size:13px;"></i></div>
         <div>
-          <div class="mc-head-title">Cetak Laporan Tiket IPSRS</div>
+          <div class="mc-head-title">Cetak / Export Laporan IPSRS</div>
           <div class="mc-head-sub">Atur filter dan periode laporan</div>
         </div>
       </div>
@@ -470,7 +460,7 @@ include '../includes/header.php';
       </div>
 
       <div class="mc-section" style="margin-bottom:0;">
-        <div class="mc-section-label"><i class="fa fa-file-pdf"></i> Jenis Laporan</div>
+        <div class="mc-section-label"><i class="fa fa-file-lines"></i> Jenis Laporan</div>
         <div class="report-opts">
           <div class="report-opt selected" id="opt-semua" onclick="pilihJenis('semua')">
             <div class="report-opt-icon" style="background:#eff6ff;"><i class="fa fa-list" style="color:#1d4ed8;"></i></div>
@@ -491,24 +481,33 @@ include '../includes/header.php';
       <span id="mc-preview-text"></span>
     </div>
 
+    <!-- ══ FOOTER — PDF + Excel ══ -->
     <div class="mc-foot">
       <div style="font-size:10.5px;color:#94a3b8;">
-        <i class="fa fa-file-pdf" style="color:#ef4444;"></i> Laporan terbuka sebagai PDF di tab baru
+        <i class="fa fa-circle-info" style="color:#94a3b8;"></i>
+        PDF terbuka di tab baru &nbsp;·&nbsp; Excel langsung diunduh
       </div>
       <div style="display:flex;gap:8px;">
         <button type="button" onclick="tutupModalCetak()"
-          style="padding:7px 15px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;font-size:12px;cursor:pointer;color:#64748b;font-family:inherit;">
+          style="padding:7px 14px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;font-size:12px;cursor:pointer;color:#64748b;font-family:inherit;">
           Batal
         </button>
         <button type="button" onclick="cetakLaporan()"
-          style="padding:7px 18px;background:linear-gradient(135deg,#26B99A,#1a7a5e);border:none;border-radius:5px;font-size:12px;cursor:pointer;color:#fff;font-family:inherit;font-weight:700;">
-          <i class="fa fa-print"></i> Cetak PDF
+          style="padding:7px 14px;background:linear-gradient(135deg,#ef4444,#b91c1c);border:none;border-radius:5px;font-size:12px;cursor:pointer;color:#fff;font-family:inherit;font-weight:700;">
+          <i class="fa fa-file-pdf"></i> PDF
+        </button>
+        <button type="button" onclick="exportExcel()" id="btn-excel-ipsrs"
+          style="padding:7px 14px;background:linear-gradient(135deg,#16a34a,#15803d);border:none;border-radius:5px;font-size:12px;cursor:pointer;color:#fff;font-family:inherit;font-weight:700;">
+          <i class="fa fa-file-excel"></i> Excel
         </button>
       </div>
     </div>
+    <!-- ══ END FOOTER ══ -->
 
   </div>
 </div>
+<!-- ════ END MODAL ════ -->
+
 
 <script>
 const APP_URL = '<?= APP_URL ?>';
@@ -564,23 +563,52 @@ function updatePreview() {
         bar.classList.remove('show');
     }
 }
+
+/* ── Bangun query params (dipakai oleh PDF & Excel) ── */
+function buildParams() {
+    const dari   = document.getElementById('mc-tgl-dari').value;
+    const sampai = document.getElementById('mc-tgl-sampai').value;
+    const jenis  = document.getElementById('mc-jenis').value;
+    const kat    = document.getElementById('mc-kat').value;
+    const status = document.getElementById('mc-status').value;
+    const prior  = document.getElementById('mc-prioritas').value;
+
+    if (!dari || !sampai) {
+        alert('Harap isi tanggal mulai dan tanggal sampai.'); return null;
+    }
+    if (new Date(dari) > new Date(sampai)) {
+        alert('Tanggal mulai tidak boleh lebih besar dari tanggal sampai.'); return null;
+    }
+    const p = new URLSearchParams({ tgl_dari: dari, tgl_sampai: sampai });
+    if (jenis)  p.set('jenis',     jenis);
+    if (kat)    p.set('kat',       kat);
+    if (status) p.set('status',    status);
+    if (prior)  p.set('prioritas', prior);
+    return p;
+}
+
+/* ── Cetak PDF ── */
 function cetakLaporan() {
-    const dari    = document.getElementById('mc-tgl-dari').value;
-    const sampai  = document.getElementById('mc-tgl-sampai').value;
-    const kat     = document.getElementById('mc-kat').value;
-    const status  = document.getElementById('mc-status').value;
-    const prior   = document.getElementById('mc-prioritas').value;
-    const jenis   = document.getElementById('mc-jenis').value;
-    if (!dari || !sampai) { alert('Harap isi tanggal mulai dan tanggal sampai.'); return; }
-    if (new Date(dari) > new Date(sampai)) { alert('Tanggal mulai tidak boleh lebih besar dari tanggal sampai.'); return; }
-    const params = new URLSearchParams({ tgl_dari: dari, tgl_sampai: sampai });
-    if (jenis)  params.set('jenis',     jenis);
-    if (kat)    params.set('kat',       kat);
-    if (status) params.set('status',    status);
-    if (prior)  params.set('prioritas', prior);
-    window.open(`${APP_URL}/pages/cetak_semua_tiket_ipsrs.php?${params.toString()}`, '_blank');
+    const p = buildParams(); if (!p) return;
+    window.open(`${APP_URL}/pages/cetak_semua_tiket_ipsrs.php?${p.toString()}`, '_blank');
     tutupModalCetak();
 }
+
+/* ── Export Excel ── */
+function exportExcel() {
+    const p = buildParams(); if (!p) return;
+    const btn = document.getElementById('btn-excel-ipsrs');
+    const ori = btn.innerHTML;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Generating...';
+    btn.disabled  = true;
+    const a  = document.createElement('a');
+    a.href   = `${APP_URL}/pages/export_semua_tiket_ipsrs.php?${p.toString()}`;
+    a.target = '_blank';
+    a.click();
+    setTimeout(() => { btn.innerHTML = ori; btn.disabled = false; }, 4000);
+    tutupModalCetak();
+}
+
 document.addEventListener('DOMContentLoaded', updatePreview);
 </script>
 

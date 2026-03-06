@@ -71,28 +71,37 @@ include '../includes/header.php';
 </div>
 <div class="content">
 
-  <!-- Filter + Tombol Cetak -->
-  <div class="panel">
-    <div class="panel-bd" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between;">
-      <form method="GET" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <label style="font-size:12px;font-weight:700;">Periode:</label>
-        <select name="bulan" class="sel-filter">
-          <?php for($m=1;$m<=12;$m++): ?><option value="<?= $m ?>" <?= $m==$bulan?'selected':'' ?>><?= $nama_bulan[$m] ?></option><?php endfor; ?>
-        </select>
-        <select name="tahun" class="sel-filter">
-          <?php for($y=date('Y');$y>=date('Y')-3;$y--): ?><option value="<?= $y ?>" <?= $y==$tahun?'selected':'' ?>><?= $y ?></option><?php endfor; ?>
-        </select>
-        <button type="submit" class="btn btn-primary btn-sm"><i class="fa fa-search"></i> Tampilkan</button>
-      </form>
+ <!-- Filter + Tombol Cetak -->
+<div class="panel">
+  <div class="panel-bd" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between;">
+    <form method="GET" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <label style="font-size:12px;font-weight:700;">Periode:</label>
+      <select name="bulan" class="sel-filter">
+        <?php for($m=1;$m<=12;$m++): ?><option value="<?= $m ?>" <?= $m==$bulan?'selected':'' ?>><?= $nama_bulan[$m] ?></option><?php endfor; ?>
+      </select>
+      <select name="tahun" class="sel-filter">
+        <?php for($y=date('Y');$y>=date('Y')-3;$y--): ?><option value="<?= $y ?>" <?= $y==$tahun?'selected':'' ?>><?= $y ?></option><?php endfor; ?>
+      </select>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="fa fa-search"></i> Tampilkan</button>
+    </form>
 
-      <!-- Tombol Cetak PDF -->
+    <!-- Tombol Aksi -->
+    <div style="display:flex;gap:7px;align-items:center;">
       <a href="<?= APP_URL ?>/pages/cetak_sla.php?bulan=<?= $bulan ?>&tahun=<?= $tahun ?>"
          class="btn btn-danger btn-sm" target="_blank"
          title="Download laporan SLA sebagai PDF">
         <i class="fa fa-file-pdf"></i> &nbsp;Cetak PDF
       </a>
+      <a href="<?= APP_URL ?>/pages/export_sla.php?bulan=<?= $bulan ?>&tahun=<?= $tahun ?>"
+         class="btn btn-sm"
+         style="background:#16a34a;color:#fff;border-color:#15803d;font-weight:600;"
+         title="Download laporan SLA sebagai Excel"
+         onclick="this.innerHTML='<i class=\'fa fa-spinner fa-spin\'></i> &nbsp;Generating...';setTimeout(()=>this.innerHTML='<i class=\'fa fa-file-excel\'></i> &nbsp;Export Excel',4000);">
+        <i class="fa fa-file-excel"></i> &nbsp;Export Excel
+      </a>
     </div>
   </div>
+</div>
 
   <!-- Periode aktif -->
   <div style="font-size:12px;color:#888;margin-bottom:12px;padding:0 2px;">

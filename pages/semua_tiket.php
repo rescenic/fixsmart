@@ -122,7 +122,7 @@ include '../includes/header.php';
         <button type="button" onclick="bukaModalCetak()"
           class="btn btn-default btn-sm"
           style="border-color:#26B99A;color:#0f766e;font-weight:600;">
-          <i class="fa fa-print"></i> Cetak Laporan
+          <i class="fa fa-print"></i> Cetak / Export
         </button>
         <!-- ══ END TOMBOL CETAK ══ -->
       </div>
@@ -168,7 +168,7 @@ include '../includes/header.php';
 
 
 <!-- ════════════════════════════════════════════════════
-     MODAL CETAK LAPORAN TIKET
+     MODAL CETAK / EXPORT LAPORAN TIKET
 ════════════════════════════════════════════════════════ -->
 <div class="mc-overlay" id="mc-overlay" onclick="if(event.target===this)tutupModalCetak()">
   <div class="mc-box">
@@ -178,7 +178,7 @@ include '../includes/header.php';
       <div style="display:flex;align-items:center;">
         <div class="mc-head-icon"><i class="fa fa-print" style="color:#26B99A;font-size:13px;"></i></div>
         <div>
-          <div class="mc-head-title">Cetak Laporan Tiket</div>
+          <div class="mc-head-title">Cetak / Export Laporan Tiket</div>
           <div class="mc-head-sub">Atur filter dan periode laporan</div>
         </div>
       </div>
@@ -254,7 +254,7 @@ include '../includes/header.php';
 
       <!-- Jenis laporan -->
       <div class="mc-section" style="margin-bottom:0;">
-        <div class="mc-section-label"><i class="fa fa-file-pdf"></i> Jenis Laporan</div>
+        <div class="mc-section-label"><i class="fa fa-file-lines"></i> Jenis Laporan</div>
         <div class="report-opts">
           <div class="report-opt selected" id="opt-semua" onclick="pilihJenis('semua')">
             <div class="report-opt-icon" style="background:#eff6ff;">
@@ -280,20 +280,24 @@ include '../includes/header.php';
       <span id="mc-preview-text">Laporan akan memuat data tiket...</span>
     </div>
 
-    <!-- Footer -->
+    <!-- Footer — 2 tombol: PDF & Excel -->
     <div class="mc-foot">
       <div style="font-size:10.5px;color:#94a3b8;">
-        <i class="fa fa-file-pdf" style="color:#ef4444;"></i>
-        Laporan terbuka sebagai PDF di tab baru
+        <i class="fa fa-circle-info" style="color:#94a3b8;"></i>
+        PDF terbuka di tab baru &nbsp;·&nbsp; Excel langsung diunduh
       </div>
       <div style="display:flex;gap:8px;">
         <button type="button" onclick="tutupModalCetak()"
-          style="padding:7px 15px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;font-size:12px;cursor:pointer;color:#64748b;font-family:inherit;">
+          style="padding:7px 14px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;font-size:12px;cursor:pointer;color:#64748b;font-family:inherit;">
           Batal
         </button>
         <button type="button" onclick="cetakLaporan()"
-          style="padding:7px 18px;background:linear-gradient(135deg,#26B99A,#1a7a5e);border:none;border-radius:5px;font-size:12px;cursor:pointer;color:#fff;font-family:inherit;font-weight:700;">
-          <i class="fa fa-print"></i> Cetak PDF
+          style="padding:7px 14px;background:linear-gradient(135deg,#ef4444,#b91c1c);border:none;border-radius:5px;font-size:12px;cursor:pointer;color:#fff;font-family:inherit;font-weight:700;">
+          <i class="fa fa-file-pdf"></i> PDF
+        </button>
+        <button type="button" onclick="exportExcel()" id="btn-excel"
+          style="padding:7px 14px;background:linear-gradient(135deg,#16a34a,#15803d);border:none;border-radius:5px;font-size:12px;cursor:pointer;color:#fff;font-family:inherit;font-weight:700;">
+          <i class="fa fa-file-excel"></i> Excel
         </button>
       </div>
     </div>
@@ -326,11 +330,10 @@ function pilihJenis(j) {
 
 /* ── Pilihan cepat periode ── */
 function setPeriod(type) {
-    // Reset chip aktif
     document.querySelectorAll('.period-chip').forEach(c => c.classList.remove('active'));
     event.target.classList.add('active');
 
-    const now   = new Date();
+    const now = new Date();
     let dari, sampai;
 
     if (type === 'bulan_ini') {
@@ -348,7 +351,7 @@ function setPeriod(type) {
     } else if (type === 'tahun_ini') {
         dari   = new Date(now.getFullYear(), 0, 1);
         sampai = new Date(now.getFullYear(), 11, 31);
-    } else { // semua
+    } else {
         dari   = new Date(2020, 0, 1);
         sampai = new Date(now.getFullYear(), 11, 31);
     }
@@ -393,38 +396,48 @@ function updatePreview() {
     }
 }
 
-/* ── Cetak ── */
-function cetakLaporan() {
+/* ── Bangun query params ── */
+function buildParams() {
     const dari    = document.getElementById('mc-tgl-dari').value;
     const sampai  = document.getElementById('mc-tgl-sampai').value;
     const kat     = document.getElementById('mc-kat').value;
     const status  = document.getElementById('mc-status').value;
     const prior   = document.getElementById('mc-prioritas').value;
 
-    if (!dari || !sampai) {
-        alert('Harap isi tanggal mulai dan tanggal sampai.');
-        return;
-    }
-    if (new Date(dari) > new Date(sampai)) {
-        alert('Tanggal mulai tidak boleh lebih besar dari tanggal sampai.');
-        return;
-    }
+    if (!dari || !sampai) { alert('Harap isi tanggal mulai dan tanggal sampai.'); return null; }
+    if (new Date(dari) > new Date(sampai)) { alert('Tanggal mulai tidak boleh lebih besar dari tanggal sampai.'); return null; }
 
-    // Jika jenis = 'kat' tapi tidak ada kategori dipilih, tampilkan semua
-    let params = `tgl_dari=${encodeURIComponent(dari)}&tgl_sampai=${encodeURIComponent(sampai)}`;
-    if (kat)    params += `&kat=${encodeURIComponent(kat)}`;
-    if (status) params += `&status=${encodeURIComponent(status)}`;
-    if (prior)  params += `&prioritas=${encodeURIComponent(prior)}`;
+    let p = `tgl_dari=${encodeURIComponent(dari)}&tgl_sampai=${encodeURIComponent(sampai)}`;
+    if (kat)    p += `&kat=${encodeURIComponent(kat)}`;
+    if (status) p += `&status=${encodeURIComponent(status)}`;
+    if (prior)  p += `&prioritas=${encodeURIComponent(prior)}`;
+    return p;
+}
 
-    const url = `${APP_URL}/pages/cetak_semua_tiket.php?${params}`;
-    window.open(url, '_blank');
+/* ── Cetak PDF ── */
+function cetakLaporan() {
+    const p = buildParams(); if (!p) return;
+    window.open(`${APP_URL}/pages/cetak_semua_tiket.php?${p}`, '_blank');
     tutupModalCetak();
 }
 
-/* ── Init preview saat load ── */
-document.addEventListener('DOMContentLoaded', function() {
-    updatePreview();
-});
+/* ── Export Excel ── */
+function exportExcel() {
+    const p = buildParams(); if (!p) return;
+    const btn = document.getElementById('btn-excel');
+    const ori = btn.innerHTML;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Generating...';
+    btn.disabled  = true;
+    // Buka di tab baru — browser akan auto-download karena Content-Disposition: attachment
+    const url = `${APP_URL}/pages/export_semua_tiket.php?${p}`;
+    const a   = document.createElement('a');
+    a.href    = url; a.target = '_blank'; a.click();
+    setTimeout(() => { btn.innerHTML = ori; btn.disabled = false; }, 4000);
+    tutupModalCetak();
+}
+
+/* ── Init ── */
+document.addEventListener('DOMContentLoaded', updatePreview);
 </script>
 
 <?php include '../includes/footer.php'; ?>
