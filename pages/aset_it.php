@@ -36,7 +36,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $garansi     = $_POST['garansi_sampai'] ?: null;
         $keterangan  = trim($_POST['keterangan'] ?? '');
 
-        // Simpan nama teks dari relasi (untuk display cepat tanpa JOIN)
         $lokasi_teks = '';
         if ($bagian_id) {
             $s = $pdo->prepare("SELECT nama FROM bagian WHERE id=?");
@@ -273,6 +272,111 @@ tr.row-dipinjam td:first-child {
 .sp-tab-tidak.active {background:#16a34a;color:#fff;}
 .sp-tab-dipinjam{background:#fffbeb;color:#92400e;border-color:#fde68a;}
 .sp-tab-dipinjam.active{background:#d97706;color:#fff;}
+
+/* ══════════════════════════════════════════════════
+   LABEL BUTTON — tombol cetak label di kolom baru
+══════════════════════════════════════════════════ */
+.btn-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 7px;
+    border: 1.5px solid rgba(0,229,176,0.35);
+    background: rgba(0,229,176,0.07);
+    color: #0f766e;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all .18s;
+    white-space: nowrap;
+    font-family: inherit;
+}
+.btn-label:hover {
+    background: rgba(0,229,176,0.18);
+    border-color: #00e5b0;
+    color: #065f46;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(0,229,176,0.2);
+}
+.btn-label i { font-size: 11px; }
+.btn-label-bars {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 1px;
+    height: 12px;
+}
+.btn-label-bars span {
+    display: inline-block;
+    width: 1.5px;
+    border-radius: 1px;
+    background: #00e5b0;
+}
+
+/* ── Modal Label Preview ── */
+.lp-card {
+    background: #fff;
+    border: 1.5px solid #1e2f42;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 8px 28px rgba(0,0,0,.1);
+}
+.lp-header {
+    background: linear-gradient(135deg, #0a0f14, #0d1a2a);
+    padding: 7px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.lp-body {
+    display: flex;
+    padding: 12px;
+}
+.lp-qr-side {
+    width: 116px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-right: 12px;
+    border-right: 1px dashed #e2e8f0;
+}
+.lp-info-side {
+    flex: 1;
+    padding-left: 12px;
+}
+.lp-no-inv {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    font-weight: 800;
+    color: #0a0f14;
+    background: linear-gradient(135deg, #eff6ff, #dbeafe);
+    border: 1px solid #bfdbfe;
+    padding: 3px 10px;
+    border-radius: 5px;
+    display: inline-block;
+    margin-bottom: 6px;
+    letter-spacing: .5px;
+}
+.lp-footer {
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    padding: 5px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.lp-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 1.8px;
+}
+.lp-bars span {
+    display: inline-block;
+    width: 2.2px;
+    border-radius: 1px;
+}
 </style>
 
 <div class="page-header">
@@ -328,6 +432,11 @@ tr.row-dipinjam td:first-child {
     <div class="sp-legend-item"><div class="sp-legend-dot" style="background:#dbeafe;border:1.5px solid #93c5fd;"></div> Baris normal = <strong>Terpakai</strong></div>
     <div class="sp-legend-item"><div class="sp-legend-dot" style="background:#d1fae5;border:1.5px solid #22c55e;"></div> Baris hijau + <s>coret</s> = <strong>Tidak Terpakai</strong></div>
     <div class="sp-legend-item"><div class="sp-legend-dot" style="background:#fef3c7;border:1.5px solid #f59e0b;"></div> Baris kuning = <strong>Dipinjam</strong></div>
+    <div class="sp-legend-item" style="margin-left:auto;">
+      <span style="background:rgba(0,229,176,0.08);border:1px solid rgba(0,229,176,0.25);padding:2px 9px;border-radius:5px;font-size:11px;color:#0f766e;font-weight:600;">
+        <i class="fa fa-qrcode" style="color:#00c896;"></i> Kolom Label = Cetak QR + Barcode
+      </span>
+    </div>
   </div>
 
   <!-- Quick filter kondisi -->
@@ -384,7 +493,6 @@ tr.row-dipinjam td:first-child {
               <div><div style="font-size:12.5px;font-weight:700;color:#1e293b;">Semua Aset IT</div><div style="font-size:10.5px;color:#94a3b8;">Laporan lengkap seluruh kategori</div></div>
               <i class="fa fa-arrow-up-right-from-square" style="margin-left:auto;color:#cbd5e1;font-size:10px;"></i>
             </a>
-            <!-- Tidak Terpakai -->
             <a href="<?= APP_URL ?>/pages/cetak_aset_it.php?mode=semua&status_pakai=Tidak+Terpakai" target="_blank" class="cdm-item">
               <div class="cdm-icon" style="background:#d1fae5;"><i class="fa fa-circle" style="color:#16a34a;"></i></div>
               <div><div style="font-size:12.5px;font-weight:700;color:#1e293b;">Aset Tidak Terpakai</div><div style="font-size:10.5px;color:#94a3b8;">Daftar aset yang belum digunakan</div></div>
@@ -460,12 +568,18 @@ tr.row-dipinjam td:first-child {
             <th>Kondisi</th>
             <th>Tgl Beli</th>
             <th>Garansi s/d</th>
+            <!-- ══ KOLOM LABEL BARU ══ -->
+            <th style="width:76px;text-align:center;">
+              <span style="display:inline-flex;align-items:center;gap:4px;">
+                <i class="fa fa-qrcode" style="color:#00c896;"></i> Label
+              </span>
+            </th>
             <th style="width:90px;">Aksi</th>
           </tr>
         </thead>
         <tbody>
           <?php if(empty($asets)): ?>
-          <tr><td colspan="13" class="td-empty"><i class="fa fa-server"></i> Tidak ada data aset</td></tr>
+          <tr><td colspan="14" class="td-empty"><i class="fa fa-server"></i> Tidak ada data aset</td></tr>
           <?php else: $no=$offset+1; foreach($asets as $a):
             $g_exp  = $a['garansi_sampai'] && strtotime($a['garansi_sampai'])<time();
             $g_soon = $a['garansi_sampai'] && !$g_exp && strtotime($a['garansi_sampai'])<strtotime('+30 days');
@@ -491,6 +605,22 @@ tr.row-dipinjam td:first-child {
                 : clean($a['lokasi']?:'—');
             $pj_disp = $a['pj_nama_db'] ?: clean($a['penanggung_jawab']?:'—');
             $pj_init = $a['pj_nama_db'] ? getInitials($a['pj_nama_db']) : ($a['penanggung_jawab']?getInitials($a['penanggung_jawab']):'?');
+
+            // ── Data untuk modal preview label ──────────────────────────────
+            $label_data_attr = htmlspecialchars(json_encode([
+                'id'      => $a['id'],
+                'no_inv'  => $a['no_inventaris'],
+                'nama'    => $a['nama_aset'],
+                'kategori'=> $a['kategori'] ?? '',
+                'merek'   => trim(($a['merek']??'').' '.($a['model_aset']??'')),
+                'sn'      => $a['serial_number'] ?? '',
+                'lokasi'  => $a['bagian_nama']
+                                ? (($a['bagian_kode'] ? '['.$a['bagian_kode'].'] ' : '').$a['bagian_nama'])
+                                : ($a['lokasi'] ?? ''),
+                'pj'      => $a['pj_nama_db'] ?: ($a['penanggung_jawab'] ?? ''),
+                'kondisi' => $a['kondisi'] ?? 'Baik',
+                'url'     => APP_URL.'/pages/aset_it.php?detail='.$a['id'],
+            ]), ENT_QUOTES, 'UTF-8');
           ?>
           <tr class="<?= $row_class ?>">
             <td style="color:#bbb;"><?= $no++ ?></td>
@@ -540,6 +670,28 @@ tr.row-dipinjam td:first-child {
               <?php else: ?><span style="color:#22c55e;"><?= date('d M Y',strtotime($a['garansi_sampai'])) ?></span>
               <?php endif; ?>
             </td>
+
+            <!-- ══ KOLOM LABEL — tombol cetak label QR + barcode ══ -->
+            <td style="text-align:center;">
+              <button type="button"
+                class="btn-label"
+                data-label="<?= $label_data_attr ?>"
+                onclick="previewLabel(this)"
+                title="Preview &amp; Cetak Label Aset">
+                <!-- Mini barline dekoratif -->
+                <span class="btn-label-bars">
+                  <span style="height:8px;"></span>
+                  <span style="height:5px;"></span>
+                  <span style="height:11px;"></span>
+                  <span style="height:5px;"></span>
+                  <span style="height:9px;"></span>
+                  <span style="height:6px;"></span>
+                  <span style="height:10px;"></span>
+                </span>
+                <i class="fa fa-qrcode"></i>
+              </button>
+            </td>
+
             <td>
               <div style="display:flex;gap:4px;">
                 <button onclick="editAset(<?= $a['id'] ?>)" class="btn btn-warning btn-sm" title="Edit"><i class="fa fa-pen"></i></button>
@@ -564,6 +716,122 @@ tr.row-dipinjam td:first-child {
         <?php if($page<$pages): ?><a href="?<?= http_build_query(array_merge($_GET,['page'=>$page+1])) ?>" class="pag-btn"><i class="fa fa-chevron-right"></i></a><?php endif; ?>
       </div>
       <?php endif; ?>
+    </div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════
+     MODAL PREVIEW LABEL — baru
+════════════════════════════════════════════════════════ -->
+<div class="modal-ov" id="m-label-preview" style="align-items:center;justify-content:center;">
+  <div style="background:#fff;width:100%;max-width:500px;border-radius:12px;
+              box-shadow:0 24px 64px rgba(0,0,0,.22);overflow:hidden;animation:mIn .2s ease;">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                padding:13px 18px;background:linear-gradient(135deg,#0a0f14,#0d1a2a);">
+      <div style="display:flex;align-items:center;gap:9px;">
+        <div style="width:30px;height:30px;background:rgba(0,229,176,0.15);
+                    border:1px solid rgba(0,229,176,0.3);border-radius:7px;
+                    display:flex;align-items:center;justify-content:center;">
+          <i class="fa fa-qrcode" style="color:#00e5b0;font-size:13px;"></i>
+        </div>
+        <div>
+          <div style="color:#fff;font-size:13px;font-weight:700;">Preview Label Aset</div>
+          <div id="lp-subtitle" style="color:rgba(255,255,255,.35);font-size:10px;"></div>
+        </div>
+      </div>
+      <button onclick="closeModal('m-label-preview')"
+        style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.1);
+               border:none;cursor:pointer;color:#ccc;font-size:13px;
+               display:flex;align-items:center;justify-content:center;"
+        onmouseover="this.style.background='#ef4444';this.style.color='#fff';"
+        onmouseout="this.style.background='rgba(255,255,255,.1)';this.style.color='#ccc';">
+        <i class="fa fa-times"></i>
+      </button>
+    </div>
+
+    <!-- Preview label card -->
+    <div style="padding:18px 22px;">
+      <div class="lp-card">
+
+        <!-- header strip label -->
+        <div class="lp-header">
+          <span style="color:#00e5b0;font-size:12px;font-weight:700;letter-spacing:.2px;">FixSmart Helpdesk</span>
+          <span id="lp-kat" style="color:rgba(255,255,255,.45);font-size:10px;
+                background:rgba(0,229,176,0.12);border:1px solid rgba(0,229,176,0.22);
+                padding:1px 8px;border-radius:8px;"></span>
+        </div>
+
+        <!-- body: QR kiri | info kanan -->
+        <div class="lp-body">
+          <div class="lp-qr-side">
+            <img id="lp-qr-img" src="" width="96" height="96"
+              style="border:1px solid #e2e8f0;border-radius:5px;padding:3px;background:#fff;"
+              alt="QR Code">
+            <div style="font-size:10px;color:#94a3b8;margin-top:5px;text-align:center;line-height:1.4;">
+              Scan untuk<br>info lengkap
+            </div>
+          </div>
+          <div class="lp-info-side">
+            <div class="lp-no-inv" id="lp-no-inv"></div>
+            <div id="lp-nama" style="font-size:13px;font-weight:700;color:#1e293b;
+                                     margin-bottom:4px;line-height:1.3;"></div>
+            <div id="lp-merek" style="font-size:11px;color:#64748b;margin-bottom:5px;"></div>
+            <div style="font-size:11px;color:#475569;margin-bottom:2px;">
+              <span style="color:#00e5b0;font-weight:bold;">●</span> <span id="lp-lokasi-val"></span>
+            </div>
+            <div style="font-size:11px;color:#475569;margin-bottom:5px;">
+              <span style="color:#00e5b0;font-weight:bold;">●</span> <span id="lp-pj-val"></span>
+            </div>
+            <span id="lp-kondisi"
+              style="display:inline-block;padding:2px 10px;border-radius:9px;
+                     font-size:10px;font-weight:700;"></span>
+            <div id="lp-sn" style="font-size:10px;color:#94a3b8;margin-top:4px;
+                                   font-family:monospace;display:none;"></div>
+          </div>
+        </div>
+
+        <!-- footer: barline dekoratif -->
+        <div class="lp-footer">
+          <div class="lp-bars" id="lp-bars"></div>
+          <span id="lp-id" style="font-size:10px;color:#94a3b8;font-family:monospace;"></span>
+        </div>
+
+      </div>
+
+      <!-- tip info -->
+      <div style="margin-top:10px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;
+                  border-radius:7px;font-size:11px;color:#065f46;display:flex;gap:7px;align-items:flex-start;">
+        <i class="fa fa-circle-info" style="color:#16a34a;flex-shrink:0;margin-top:1px;"></i>
+        <div>Cetak label ini lalu tempel di aset. Ketika QR di-scan pakai HP, akan langsung membuka halaman detail aset lengkap di sistem.</div>
+      </div>
+    </div>
+
+    <!-- footer modal: tombol aksi -->
+    <div style="padding:11px 22px;border-top:1px solid #f0f0f0;background:#f8fafc;
+                display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <div style="font-size:11px;color:#94a3b8;">
+        <i class="fa fa-lightbulb" style="color:#f59e0b;"></i> PDF buka di tab baru — Ctrl+P untuk cetak fisik
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="closeModal('m-label-preview')"
+          style="padding:7px 16px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;
+                 font-size:12px;cursor:pointer;color:#64748b;font-family:inherit;"
+          onmouseover="this.style.background='#e2e8f0';"
+          onmouseout="this.style.background='#f1f5f9';">Tutup</button>
+        <a id="lp-btn-cetak" href="#" target="_blank"
+          style="display:inline-flex;align-items:center;gap:7px;padding:7px 18px;
+                 background:linear-gradient(135deg,#00e5b0,#00c896);border:none;
+                 border-radius:6px;font-size:12px;cursor:pointer;color:#0a0f14;
+                 font-family:inherit;font-weight:700;text-decoration:none;
+                 box-shadow:0 3px 12px rgba(0,229,176,0.3);transition:opacity .18s;"
+          onmouseover="this.style.opacity='.85';"
+          onmouseout="this.style.opacity='1';">
+          <i class="fa fa-file-pdf"></i> Cetak Label PDF
+        </a>
+      </div>
     </div>
   </div>
 </div>
@@ -796,14 +1064,87 @@ document.addEventListener('click', function(e) {
         document.getElementById('cetak-drop').classList.remove('open');
 });
 
+/* ══════════════════════════════════════════════════════════════════
+   PREVIEW LABEL — buka modal + render preview QR & barline
+══════════════════════════════════════════════════════════════════ */
+function previewLabel(btn) {
+    // Baca data dari data-label attribute (lebih aman dari inline JSON)
+    var d;
+    try {
+        d = JSON.parse(btn.getAttribute('data-label'));
+    } catch(e) {
+        alert('Gagal membaca data label: ' + e.message);
+        return;
+    }
+    // Subtitle = no inventaris
+    document.getElementById('lp-subtitle').textContent = d.no_inv || '';
+
+    // Kategori tag
+    document.getElementById('lp-kat').textContent = d.kategori || '—';
+
+    document.getElementById('lp-qr-img').src =
+        'https://chart.googleapis.com/chart?chs=140x140&cht=qr&choe=UTF-8&chld=M|2&chl='
+        + encodeURIComponent(d.url);
+
+    // No. Inventaris
+    document.getElementById('lp-no-inv').textContent = d.no_inv || '—';
+
+    // Nama aset
+    document.getElementById('lp-nama').textContent = d.nama || '—';
+
+    // Merek/model
+    const merekEl = document.getElementById('lp-merek');
+    merekEl.textContent   = d.merek || '';
+    merekEl.style.display = d.merek ? '' : 'none';
+
+    // Lokasi & PJ
+    document.getElementById('lp-lokasi-val').textContent = d.lokasi || '—';
+    document.getElementById('lp-pj-val').textContent     = d.pj     || '—';
+
+    // Kondisi badge warna
+    const kEl  = document.getElementById('lp-kondisi');
+    kEl.textContent = d.kondisi || 'Baik';
+    const kMap = {
+        'Baik':            ['#d1fae5', '#065f46'],
+        'Rusak':           ['#fee2e2', '#991b1b'],
+        'Dalam Perbaikan': ['#fef9c3', '#854d0e'],
+        'Tidak Aktif':     ['#f1f5f9', '#475569'],
+    };
+    const [kb, kc] = kMap[d.kondisi] || ['#f1f5f9', '#475569'];
+    kEl.style.background = kb;
+    kEl.style.color      = kc;
+
+    // Serial Number
+    const snEl = document.getElementById('lp-sn');
+    if (d.sn) { snEl.textContent = 'S/N: ' + d.sn; snEl.style.display = ''; }
+    else snEl.style.display = 'none';
+
+    // Barline dekoratif — alternating heights, teal setiap 3 batang
+    const barsEl = document.getElementById('lp-bars');
+    barsEl.innerHTML = '';
+    [9,5,13,7,10,5,12,6,9,14,5,10,7,13,5,9,11,6,14,5,10,8,13,6,9,5,12,7].forEach((h, i) => {
+        const s = document.createElement('span');
+        s.style.cssText = `height:${h}px;background:${i % 3 === 0 ? '#00e5b0' : '#1e2f42'};`;
+        barsEl.appendChild(s);
+    });
+
+    // ID footer
+    document.getElementById('lp-id').textContent = 'ID #' + d.id;
+
+    // Tombol cetak → link ke cetak_label_aset.php?id=X
+    document.getElementById('lp-btn-cetak').href =
+        APP_URL + '/pages/cetak_label_aset.php?id=' + d.id;
+
+    openModal('m-label-preview');
+}
+
 /* ── Status Pakai: style select + preview bar ────────────────────── */
 function updateStatusPakaiStyle(sel) {
-    const val     = sel.value;
-    const bar     = document.getElementById('sp-preview-bar');
-    const icon    = document.getElementById('sp-preview-icon');
-    const txt     = document.getElementById('sp-preview-txt');
+    const val  = sel.value;
+    const bar  = document.getElementById('sp-preview-bar');
+    const icon = document.getElementById('sp-preview-icon');
+    const txt  = document.getElementById('sp-preview-txt');
 
-    // Reset classes
     sel.className = 'f-inp';
 
     if (val === 'Tidak Terpakai') {
@@ -862,9 +1203,9 @@ function updateLokasiHint(sel) {
 
 /* ── Hint PJ ─────────────────────────────────────────────────────── */
 function updatePjHint(sel) {
-    const opt = sel.options[sel.selectedIndex];
+    const opt    = sel.options[sel.selectedIndex];
     const divisi = opt.dataset.divisi || '', role = opt.dataset.role || '';
-    const hint = document.getElementById('pj-hint');
+    const hint   = document.getElementById('pj-hint');
     if (sel.value && (divisi || role)) {
         let txt = [];
         if (role)   txt.push('Role: ' + role.charAt(0).toUpperCase() + role.slice(1));
@@ -892,7 +1233,6 @@ function editAset(id) {
             document.getElementById('f-action').value = 'edit';
             document.getElementById('f-id').value     = d.id;
 
-            // Mode manual saat edit
             const chk = document.getElementById('toggle-manual-inv');
             chk.checked = true; toggleInv(chk);
             document.getElementById('f-no_inventaris').value = d.no_inventaris || '';
@@ -908,16 +1248,13 @@ function editAset(id) {
             document.getElementById('f-garansi_sampai').value = d.garansi_sampai|| '';
             document.getElementById('f-keterangan').value     = d.keterangan    || '';
 
-            // Status Pakai
             const spSel = document.getElementById('f-status_pakai');
             spSel.value = d.status_pakai || 'Terpakai';
             updateStatusPakaiStyle(spSel);
 
-            // Bagian
             const sBagian = document.getElementById('f-bagian_id');
             sBagian.value = d.bagian_id || ''; updateLokasiHint(sBagian);
 
-            // PJ
             const sPj = document.getElementById('f-pj_user_id');
             sPj.value = d.pj_user_id || ''; updatePjHint(sPj);
 
@@ -944,12 +1281,10 @@ function resetFormAset() {
     document.getElementById('modal-title').textContent      = 'Tambah Aset IT Baru';
     document.getElementById('modal-icon').className         = 'fa fa-plus';
     document.getElementById('btn-submit-label').textContent = 'Simpan Aset';
-    // Reset ke Auto
     const chk = document.getElementById('toggle-manual-inv');
     chk.checked = false; toggleInv(chk);
     document.getElementById('lokasi-hint').style.display = 'none';
     document.getElementById('pj-hint').style.display     = 'none';
-    // Reset status pakai
     const spSel = document.getElementById('f-status_pakai');
     spSel.value = 'Terpakai'; updateStatusPakaiStyle(spSel);
 }
