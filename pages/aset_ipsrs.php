@@ -483,7 +483,11 @@ tr.row-kal-expired td:first-child{border-left:4px solid #ef4444 !important;}
       <table>
         <thead>
           <tr>
-            <th style="width:32px;">#</th>
+            <!-- PATCH 1: checkbox master + kolom label -->
+            <th style="width:42px;text-align:center;">
+              <input type="checkbox" id="cb-all" title="Pilih semua" onchange="toggleAllCb(this)"
+                style="width:13px;height:13px;cursor:pointer;accent-color:#f97316;">
+            </th>
             <th>No. Inventaris</th>
             <th>No. Aset RS</th>
             <th>Nama Aset</th>
@@ -529,7 +533,21 @@ tr.row-kal-expired td:first-child{border-left:4px solid #ef4444 !important;}
             $jenis   = $a['jenis_aset'] ?? 'Non-Medis';
           ?>
           <tr class="<?= $row_class ?>">
-            <td style="color:#bbb;"><?= $no++ ?></td>
+            <!-- PATCH 2: checkbox per baris + tombol cetak label single -->
+            <td style="text-align:center;vertical-align:middle;padding:4px 3px;">
+              <input type="checkbox" class="cb-aset" value="<?= $a['id'] ?>"
+                style="width:13px;height:13px;cursor:pointer;accent-color:#f97316;display:block;margin:0 auto 4px;">
+              <a href="<?= APP_URL ?>/pages/cetak_label_aset_ipsrs.php?id=<?= $a['id'] ?>" target="_blank"
+                title="Cetak Label Aset"
+                style="display:inline-flex;align-items:center;justify-content:center;
+                       width:22px;height:22px;background:linear-gradient(135deg,#fff7ed,#ffedd5);
+                       border:1px solid #fed7aa;border-radius:4px;color:#c2410c;
+                       font-size:10px;text-decoration:none;transition:all .15s;"
+                onmouseover="this.style.background='linear-gradient(135deg,#ea580c,#c2410c)';this.style.color='#fff';"
+                onmouseout="this.style.background='linear-gradient(135deg,#fff7ed,#ffedd5)';this.style.color='#c2410c';">
+                <i class="fa fa-tag"></i>
+              </a>
+            </td>
             <td><span class="inv-badge"><?= clean($a['no_inventaris']) ?></span></td>
             <td>
               <?php if($a['no_aset_rs']): ?>
@@ -613,7 +631,7 @@ tr.row-kal-expired td:first-child{border-left:4px solid #ef4444 !important;}
       <?php endif; ?>
     </div>
   </div>
-</div>
+</div><!-- /content -->
 
 
 <!-- ════════════════════════════════════════════════════
@@ -1085,9 +1103,82 @@ function resetFormAset() {
     setJenis('Non-Medis');
 }
 
+/* ════════════════════════════════════════════
+   PATCH 3 & 4 — BATCH CETAK LABEL
+════════════════════════════════════════════ */
+function toggleAllCb(master) {
+    document.querySelectorAll('.cb-aset').forEach(cb => cb.checked = master.checked);
+    updateBatchBar();
+}
+
+function updateBatchBar() {
+    const checked = document.querySelectorAll('.cb-aset:checked');
+    const bar     = document.getElementById('batch-label-bar');
+    const cnt     = document.getElementById('batch-label-count');
+    if (!bar) return;
+    bar.style.display = checked.length > 0 ? 'flex' : 'none';
+    cnt.textContent   = checked.length + ' aset dipilih';
+}
+
+function resetBatchCb() {
+    document.querySelectorAll('.cb-aset').forEach(cb => cb.checked = false);
+    const master = document.getElementById('cb-all');
+    if (master) { master.checked = false; master.indeterminate = false; }
+    updateBatchBar();
+}
+
+function cetakBatchLabel() {
+    const ids = [...document.querySelectorAll('.cb-aset:checked')].map(cb => cb.value);
+    if (ids.length === 0) { alert('Pilih minimal 1 aset terlebih dahulu.'); return; }
+    window.open(APP_URL + '/pages/cetak_label_aset_ipsrs.php?ids=' + ids.join(','), '_blank');
+}
+
+// Sinkronisasi state master checkbox saat tiap checkbox individual diubah
+document.addEventListener('change', function(e) {
+    if (!e.target.classList.contains('cb-aset')) return;
+    const all    = document.querySelectorAll('.cb-aset');
+    const chk    = document.querySelectorAll('.cb-aset:checked');
+    const master = document.getElementById('cb-all');
+    if (master) {
+        master.checked       = chk.length > 0 && chk.length === all.length;
+        master.indeterminate = chk.length > 0 && chk.length < all.length;
+    }
+    updateBatchBar();
+});
+
 document.getElementById('m-tambah-aset').addEventListener('click', function(e) {
     if (e.target === this) tutupModal();
 });
 </script>
+
+<!-- ════════════════════════════════════════════════════
+     FLOATING BATCH CETAK LABEL BAR
+     (di luar .content agar position:fixed tidak terpotong)
+════════════════════════════════════════════════════════ -->
+<div id="batch-label-bar"
+     style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+            background:linear-gradient(135deg,#7c2d12,#ea580c);color:#fff;
+            padding:10px 18px;border-radius:30px;
+            box-shadow:0 6px 24px rgba(0,0,0,.25);
+            z-index:9999;align-items:center;gap:14px;
+            font-size:13px;font-weight:700;white-space:nowrap;">
+  <i class="fa fa-tags"></i>
+  <span id="batch-label-count">0 aset dipilih</span>
+  <button onclick="cetakBatchLabel()"
+    style="padding:5px 16px;background:#fff;color:#c2410c;border:none;
+           border-radius:20px;font-size:12px;font-weight:800;
+           cursor:pointer;font-family:inherit;transition:opacity .15s;"
+    onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+    <i class="fa fa-print"></i> Cetak Label
+  </button>
+  <button onclick="resetBatchCb()"
+    title="Batal pilihan"
+    style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);
+           color:#fff;border-radius:50%;width:24px;height:24px;
+           cursor:pointer;font-size:11px;display:inline-flex;
+           align-items:center;justify-content:center;flex-shrink:0;">
+    <i class="fa fa-times"></i>
+  </button>
+</div>
 
 <?php include '../includes/footer.php'; ?>
