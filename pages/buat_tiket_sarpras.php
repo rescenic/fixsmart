@@ -116,12 +116,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             VALUES (?,?,NULL,'menunggu',?)
         ")->execute([$new_id, $_SESSION['user_id'], 'Tiket dibuat oleh ' . $_SESSION['user_nama']]);
 
-        // ── NOTIFIKASI TELEGRAM ──────────────────────────────────────────────
+        // ── NOTIFIKASI TELEGRAM IPSRS ────────────────────────────────────────
+        // Gunakan sendTelegramEvent() dengan saluran 'ipsrs' agar dikirim ke
+        // grup Telegram IPSRS (bukan grup IT)
         $cfg_tg = getSettings($pdo);
-        if (
-            ($cfg_tg['telegram_enabled']               ?? '0') === '1' &&
-            ($cfg_tg['telegram_notif_tiket_baru']      ?? '0') === '1'
-        ) {
+        if (($cfg_tg['ipsrs_telegram_notif_tiket_baru'] ?? '0') === '1') {
             $kat_nama = '-';
             foreach ($kategori_list as $k) {
                 if ((int)$k['id'] === $kat_id) { $kat_nama = $k['nama']; break; }
@@ -143,7 +142,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  . "💬 <b>Deskripsi:</b>\n"
                  . htmlspecialchars(mb_substr($desc, 0, 200, 'UTF-8') . (mb_strlen($desc, 'UTF-8') > 200 ? '...' : ''), ENT_QUOTES) . "\n\n"
                  . "<i>Silakan cek dashboard untuk segera menangani tiket IPSRS ini.</i>";
-            sendTelegram($pdo, $msg);
+
+            // Kirim ke saluran IPSRS
+            sendTelegramEvent($pdo, 'tiket_baru', $msg, 'ipsrs');
         }
         // ────────────────────────────────────────────────────────────────────
 
@@ -197,7 +198,7 @@ include '../includes/header.php';
 .jenis-card.active-non   .jenis-card-label { color: #1e40af; }
 
 /* ═══════════════════════════════════════════════════════
-   ASET PICKER — sama persis dengan IT
+   ASET PICKER
 ═══════════════════════════════════════════════════════ */
 .ap-trigger {
     display: flex; align-items: center; gap: 10px;
@@ -236,8 +237,6 @@ include '../includes/header.php';
 .asc-k-serv { background: #fef9c3; color: #854d0e; }
 .asc-remove { position: absolute; top: 9px; right: 10px; width: 22px; height: 22px; border-radius: 50%; background: #fee2e2; border: none; cursor: pointer; color: #dc2626; display: flex; align-items: center; justify-content: center; font-size: 10px; transition: background .14s; }
 .asc-remove:hover { background: #fca5a5; }
-
-/* Jenis badge di kartu aset terpilih */
 .asc-jenis-m { display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:700;background:#fce7f3;color:#9d174d; }
 .asc-jenis-n { display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:700;background:#dbeafe;color:#1e40af; }
 
@@ -263,28 +262,20 @@ include '../includes/header.php';
 .apm-head-sub   { color: rgba(255,255,255,.4); font-size: 10px; margin-top: 1px; }
 .apm-close { width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,.1); border: none; cursor: pointer; color: #ccc; font-size: 12px; display: flex; align-items: center; justify-content: center; transition: background .15s; }
 .apm-close:hover { background: #ef4444; color: #fff; }
-
 .apm-search-area { padding: 12px 16px 10px; border-bottom: 1px solid #f1f5f9; background: #fafafa; flex-shrink: 0; }
-
-/* Filter jenis Medis/Non-Medis di dalam modal */
 .apm-jenis-tabs { display: flex; gap: 6px; margin-bottom: 9px; }
-.apm-jenis-tab  {
-    padding: 4px 13px; border-radius: 14px; font-size: 11px; font-weight: 700;
-    border: 1.5px solid #e2e8f0; background: #f8fafc; color: #64748b;
-    cursor: pointer; transition: all .14s; user-select: none;
-}
+.apm-jenis-tab  { padding: 4px 13px; border-radius: 14px; font-size: 11px; font-weight: 700; border: 1.5px solid #e2e8f0; background: #f8fafc; color: #64748b; cursor: pointer; transition: all .14s; user-select: none; }
 .apm-jenis-tab:hover             { border-color: #94a3b8; }
 .apm-jenis-tab.active-all        { background: #1e293b; color: #fff; border-color: #1e293b; }
 .apm-jenis-tab.active-medis      { background: #ec4899; color: #fff; border-color: #ec4899; }
 .apm-jenis-tab.active-non        { background: #3b82f6; color: #fff; border-color: #3b82f6; }
-
 .apm-search-wrap { display: flex; border: 1.5px solid #d1d5db; border-radius: 8px; overflow: hidden; background: #fff; transition: border .18s, box-shadow .18s; }
 .apm-search-wrap:focus-within { border-color: #26B99A; box-shadow: 0 0 0 3px rgba(38,185,154,.1); }
 .apm-search-inp { flex: 1; padding: 9px 12px; border: none; outline: none; font-size: 13px; font-family: inherit; }
 .apm-search-btn { padding: 9px 15px; background: #26B99A; border: none; color: #fff; cursor: pointer; font-size: 13px; transition: background .15s; }
 .apm-search-btn:hover { background: #1a7a5e; }
 .apm-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
-.apm-chip  { padding: 3px 11px; border-radius: 14px; font-size: 11px; font-weight: 600; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; cursor: pointer; white-space: nowrap; transition: all .14s; user-select: none; }
+.apm-chip  { padding: 3px 11px; border-radius: 14px; font-size: 11px; font-weight: 600; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; cursor: pointer; white-space: nowrap; transition: all .14px; user-select: none; }
 .apm-chip:hover  { border-color: #26B99A; color: #0f766e; background: #f0fdf9; }
 .apm-chip.active { background: #26B99A; color: #fff; border-color: #26B99A; }
 .apm-list { flex: 1; overflow-y: auto; min-height: 220px; }
@@ -377,7 +368,6 @@ mark.apm-hl { background: #fef9c3; color: #854d0e; border-radius: 2px; padding: 
                 <?php
                 $cur_jenis = '';
                 foreach ($kategori_list as $k):
-                    // Tambah pemisah antar jenis
                     if ($k['jenis'] !== $cur_jenis) {
                         $cur_jenis = $k['jenis'];
                         echo '<optgroup label="── ' . clean($k['jenis']) . ' ──">';
@@ -469,7 +459,6 @@ mark.apm-hl { background: #fef9c3; color: #854d0e; border-radius: 2px; padding: 
               Pilih peralatan yang bermasalah agar teknisi IPSRS langsung tahu aset mana yang harus ditangani.
             </div>
           </div>
-          <!-- ─── END ASET PICKER ─────────────────────────────── -->
 
           <!-- ⑤ Deskripsi -->
           <div class="form-group">
@@ -595,9 +584,7 @@ mark.apm-hl { background: #fef9c3; color: #854d0e; border-radius: 2px; padding: 
 </div><!-- /content -->
 
 
-<!-- ══════════════════════════════════════════════════════════════════
-     MODAL ASET PICKER IPSRS
-══════════════════════════════════════════════════════════════════ -->
+<!-- ════ MODAL ASET PICKER IPSRS ════ -->
 <div class="apm-overlay" id="apm-overlay" onclick="if(event.target===this)apmTutup()">
   <div class="apm-box">
 
@@ -617,13 +604,11 @@ mark.apm-hl { background: #fef9c3; color: #854d0e; border-radius: 2px; padding: 
     </div>
 
     <div class="apm-search-area">
-      <!-- Filter Medis / Non-Medis -->
       <div class="apm-jenis-tabs">
         <span class="apm-jenis-tab active-all" onclick="apmSetJenis('', this)">Semua</span>
         <span class="apm-jenis-tab" onclick="apmSetJenis('Medis', this)">🏥 Medis</span>
         <span class="apm-jenis-tab" onclick="apmSetJenis('Non-Medis', this)">🔧 Non-Medis</span>
       </div>
-
       <div class="apm-search-wrap">
         <input type="text" id="apm-inp" class="apm-search-inp"
                placeholder="Ketik nama aset, no. inventaris, merek, serial…"
@@ -633,8 +618,6 @@ mark.apm-hl { background: #fef9c3; color: #854d0e; border-radius: 2px; padding: 
           <i class="fa fa-search"></i>
         </button>
       </div>
-
-      <!-- Filter chips kategori -->
       <div class="apm-chips" id="apm-chips">
         <span class="apm-chip active" onclick="apmSetKat('', this)">
           <i class="fa fa-layer-group" style="font-size:10px;margin-right:2px;"></i> Semua Kategori
@@ -671,31 +654,24 @@ mark.apm-hl { background: #fef9c3; color: #854d0e; border-radius: 2px; padding: 
 <script>
 const APP_URL = '<?= APP_URL ?>';
 
-/* ══════════════════════════════════════
-   JENIS TIKET SELECTOR
-══════════════════════════════════════ */
+/* ══ JENIS TIKET ══ */
 function setJenis(jenis) {
     document.getElementById('inp-jenis').value = jenis;
     const bM = document.getElementById('btn-jenis-medis');
     const bN = document.getElementById('btn-jenis-non');
     bM.className = 'jenis-card' + (jenis === 'Medis'     ? ' active-medis' : '');
     bN.className = 'jenis-card' + (jenis === 'Non-Medis' ? ' active-non'   : '');
-
-    // Filter dropdown kategori sesuai jenis
     const sel = document.getElementById('sel-kategori');
     for (const opt of sel.options) {
         if (!opt.value) continue;
         const j = opt.dataset.jenis || '';
         opt.hidden = (jenis !== '' && j !== jenis);
     }
-    // Reset pilihan kategori jika tidak cocok
     const cur = sel.options[sel.selectedIndex];
     if (cur && cur.hidden) sel.value = '';
 }
 
-/* ══════════════════════════════════════
-   LOKASI TOGGLE
-══════════════════════════════════════ */
+/* ══ LOKASI TOGGLE ══ */
 function toggleManual(val) {
     const box = document.getElementById('box-manual');
     const inp = document.getElementById('inp-manual');
@@ -710,56 +686,42 @@ document.addEventListener('DOMContentLoaded', function() {
     if (sel && sel.value) toggleManual(sel.value);
 });
 
+/* ══ ASET PICKER ══ */
+let _apmKat = '', _apmJenis = '', _apmTimer = null, _apmSelId = null;
 
-/* ══════════════════════════════════════
-   ASET PICKER — State
-══════════════════════════════════════ */
-let _apmKat   = '';
-let _apmJenis = '';
-let _apmTimer = null;
-let _apmSelId = null;
-
-// Ikon per kategori IPSRS
 const KAT_STYLE = {
-    'Peralatan Diagnostik'   : ['fa-stethoscope',        '#0891b2', '#ecfeff'],
-    'Ventilator / Respirator': ['fa-lungs',               '#7c3aed', '#faf5ff'],
-    'Infus Pump / Syringe'   : ['fa-syringe',             '#db2777', '#fdf2f8'],
-    'Sterilisasi / Autoclave': ['fa-flask-vial',          '#059669', '#ecfdf5'],
-    'Peralatan Bedah'        : ['fa-bandage',             '#dc2626', '#fef2f2'],
-    'Peralatan Laboratorium' : ['fa-flask-vial',          '#0f766e', '#f0fdfa'],
-    'Radiologi / Imaging'    : ['fa-radiation',           '#b45309', '#fef3c7'],
-    'Peralatan Gigi'         : ['fa-tooth',               '#6d28d9', '#faf5ff'],
-    'Peralatan Mata'         : ['fa-eye',                 '#0369a1', '#f0f9ff'],
-    'Inkubator / Infant'     : ['fa-baby',                '#be185d', '#fdf2f8'],
-    'Lainnya (Medis)'        : ['fa-kit-medical',         '#64748b', '#f8fafc'],
-    'Instalasi Listrik'      : ['fa-bolt',                '#ca8a04', '#fefce8'],
-    'Generator / UPS'        : ['fa-plug-circle-bolt',   '#92400e', '#fef3c7'],
-    'HVAC / AC'              : ['fa-wind',                '#0284c7', '#f0f9ff'],
-    'Sanitasi / Plumbing'    : ['fa-droplet',             '#0891b2', '#ecfeff'],
-    'Pompa / Kompresor'      : ['fa-gear',                '#4b5563', '#f9fafb'],
-    'Dapur / Gizi'           : ['fa-utensils',            '#92400e', '#fef9c3'],
-    'Laundry'                : ['fa-shirt',               '#6d28d9', '#faf5ff'],
-    'Kebersihan'             : ['fa-broom',               '#16a34a', '#f0fdf4'],
-    'Kendaraan / Ambulans'   : ['fa-car',                 '#1d4ed8', '#eff6ff'],
-    'Keamanan / CCTV'        : ['fa-camera',              '#dc2626', '#fef2f2'],
-    'Alat Angkat / Angkut'   : ['fa-dolly',               '#7c3aed', '#faf5ff'],
-    'Lainnya (Non-Medis)'    : ['fa-toolbox',             '#64748b', '#f8fafc'],
+    'Peralatan Diagnostik'   : ['fa-stethoscope',       '#0891b2','#ecfeff'],
+    'Ventilator / Respirator': ['fa-lungs',              '#7c3aed','#faf5ff'],
+    'Infus Pump / Syringe'   : ['fa-syringe',            '#db2777','#fdf2f8'],
+    'Sterilisasi / Autoclave': ['fa-flask-vial',         '#059669','#ecfdf5'],
+    'Peralatan Bedah'        : ['fa-bandage',            '#dc2626','#fef2f2'],
+    'Peralatan Laboratorium' : ['fa-flask-vial',         '#0f766e','#f0fdfa'],
+    'Radiologi / Imaging'    : ['fa-radiation',          '#b45309','#fef3c7'],
+    'Peralatan Gigi'         : ['fa-tooth',              '#6d28d9','#faf5ff'],
+    'Peralatan Mata'         : ['fa-eye',                '#0369a1','#f0f9ff'],
+    'Inkubator / Infant'     : ['fa-baby',               '#be185d','#fdf2f8'],
+    'Lainnya (Medis)'        : ['fa-kit-medical',        '#64748b','#f8fafc'],
+    'Instalasi Listrik'      : ['fa-bolt',               '#ca8a04','#fefce8'],
+    'Generator / UPS'        : ['fa-plug-circle-bolt',  '#92400e','#fef3c7'],
+    'HVAC / AC'              : ['fa-wind',               '#0284c7','#f0f9ff'],
+    'Sanitasi / Plumbing'    : ['fa-droplet',            '#0891b2','#ecfeff'],
+    'Pompa / Kompresor'      : ['fa-gear',               '#4b5563','#f9fafb'],
+    'Dapur / Gizi'           : ['fa-utensils',           '#92400e','#fef9c3'],
+    'Laundry'                : ['fa-shirt',              '#6d28d9','#faf5ff'],
+    'Kebersihan'             : ['fa-broom',              '#16a34a','#f0fdf4'],
+    'Kendaraan / Ambulans'   : ['fa-car',                '#1d4ed8','#eff6ff'],
+    'Keamanan / CCTV'        : ['fa-camera',             '#dc2626','#fef2f2'],
+    'Alat Angkat / Angkut'   : ['fa-dolly',              '#7c3aed','#faf5ff'],
+    'Lainnya (Non-Medis)'    : ['fa-toolbox',            '#64748b','#f8fafc'],
 };
 
-function apmBuka() {
-    document.getElementById('apm-overlay').classList.add('open');
-    apmLoad('');
-    setTimeout(() => document.getElementById('apm-inp').focus(), 160);
-}
-function apmTutup() {
-    document.getElementById('apm-overlay').classList.remove('open');
-}
+function apmBuka()  { document.getElementById('apm-overlay').classList.add('open'); apmLoad(''); setTimeout(() => document.getElementById('apm-inp').focus(), 160); }
+function apmTutup() { document.getElementById('apm-overlay').classList.remove('open'); }
+
 function apmSetJenis(jenis, el) {
     _apmJenis = jenis;
-    document.querySelectorAll('.apm-jenis-tab').forEach(t => {
-        t.className = 'apm-jenis-tab';
-    });
-    if (jenis === '')          el.classList.add('active-all');
+    document.querySelectorAll('.apm-jenis-tab').forEach(t => t.className = 'apm-jenis-tab');
+    if (jenis === '')           el.classList.add('active-all');
     else if (jenis === 'Medis') el.classList.add('active-medis');
     else                        el.classList.add('active-non');
     apmLoad(document.getElementById('apm-inp').value);
@@ -770,54 +732,41 @@ function apmSetKat(kat, el) {
     el.classList.add('active');
     apmLoad(document.getElementById('apm-inp').value);
 }
-function apmDebounce(q) {
-    clearTimeout(_apmTimer);
-    _apmShowLoading();
-    _apmTimer = setTimeout(() => apmLoad(q), 300);
-}
+function apmDebounce(q) { clearTimeout(_apmTimer); _apmShowLoading(); _apmTimer = setTimeout(() => apmLoad(q), 300); }
 function apmLoad(q) {
     let url = `${APP_URL}/pages/buat_tiket_sarpras.php?aset_picker_search=1&q=${encodeURIComponent(q||'')}`;
     if (_apmKat)   url += `&kat=${encodeURIComponent(_apmKat)}`;
     if (_apmJenis) url += `&jenis=${encodeURIComponent(_apmJenis)}`;
-    fetch(url)
-        .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-        .then(data => _apmRender(data, q))
-        .catch(() => _apmShowError());
+    fetch(url).then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(d => _apmRender(d, q)).catch(() => _apmShowError());
 }
-
 function _apmRender(data, q) {
     const list = document.getElementById('apm-list');
     const cnt  = document.getElementById('apm-count');
-    if (!data || data.length === 0) {
+    if (!data || !data.length) {
         cnt.textContent = '0 aset';
         list.innerHTML = `<div class="apm-state"><i class="fa fa-box-open" style="color:#e2e8f0;"></i><div class="apm-state-title">Tidak ada aset ditemukan</div><div class="apm-state-sub">Coba kata kunci lain atau ubah filter</div></div>`;
         return;
     }
     cnt.textContent = data.length + (data.length >= 60 ? '+' : '') + ' aset';
     list.innerHTML = data.map(a => {
-        const [ico, col, bg] = KAT_STYLE[a.kategori] || ['fa-toolbox', '#64748b', '#f1f5f9'];
-        const isSel  = (_apmSelId == a.id);
+        const [ico, col, bg] = KAT_STYLE[a.kategori] || ['fa-toolbox','#64748b','#f1f5f9'];
         const kCls   = a.kondisi === 'Baik' ? 'apm-k-baik' : 'apm-k-serv';
         const kIco   = a.kondisi === 'Baik' ? 'fa-circle-check' : 'fa-wrench';
         const jBadge = a.jenis_aset === 'Medis'
             ? `<span class="apm-jenis-m"><i class="fa fa-kit-medical" style="font-size:9px;"></i> Medis</span>`
             : `<span class="apm-jenis-n"><i class="fa fa-screwdriver-wrench" style="font-size:9px;"></i> Non-Medis</span>`;
-        const namaHL = _hl(_esc(a.nama_aset), q);
-        const invHL  = _hl(_esc(a.no_inventaris), q);
-        const merekModel = [a.merek, a.model_aset].filter(Boolean).map(_esc).join(' · ');
-        const lokasiStr  = [
-            a.bagian_kode ? '['+a.bagian_kode+']' : '',
-            a.bagian_nama, a.bagian_lokasi
-        ].filter(Boolean).join(' ');
+        const namaHL    = _hl(_esc(a.nama_aset), q);
+        const invHL     = _hl(_esc(a.no_inventaris), q);
+        const merekModel= [a.merek, a.model_aset].filter(Boolean).map(_esc).join(' · ');
+        const lokasiStr = [a.bagian_kode?'['+a.bagian_kode+']':'', a.bagian_nama, a.bagian_lokasi].filter(Boolean).join(' ');
         const js = s => (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' ');
-        return `
-        <div class="apm-item${isSel?' selected':''}"
+        return `<div class="apm-item${_apmSelId==a.id?' selected':''}"
              onclick="apmPilih(${a.id},'${js(a.no_inventaris)}','${js(a.nama_aset)}','${js(a.merek||'')}','${js(a.model_aset||'')}','${js(a.kondisi)}','${js(a.serial_number||'')}','${js(lokasiStr)}','${js(a.bagian_lokasi||'')}','${js(a.kategori||'')}','${js(a.pj_nama||'')}','${js(a.jenis_aset||'')}')">
           <div class="apm-item-ic" style="background:${bg};"><i class="fa ${ico}" style="color:${col};"></i></div>
           <div class="apm-item-body">
             <div class="apm-item-nama">${namaHL}</div>
             <div class="apm-item-inv">${invHL}</div>
-            <div class="apm-item-meta">${merekModel || _esc(a.kategori||'—')}</div>
+            <div class="apm-item-meta">${merekModel||_esc(a.kategori||'—')}</div>
             ${lokasiStr?`<div class="apm-item-lok"><i class="fa fa-location-dot" style="color:#26B99A;font-size:9px;"></i> ${_esc(lokasiStr)}</div>`:''}
           </div>
           <div class="apm-item-right">
@@ -827,7 +776,6 @@ function _apmRender(data, q) {
         </div>`;
     }).join('');
 }
-
 function _apmShowLoading() {
     document.getElementById('apm-count').textContent = '…';
     document.getElementById('apm-list').innerHTML = `<div class="apm-state"><i class="fa fa-spinner fa-spin" style="color:#26B99A;"></i><div class="apm-state-title">Mencari aset…</div></div>`;
@@ -836,41 +784,30 @@ function _apmShowError() {
     document.getElementById('apm-count').textContent = '—';
     document.getElementById('apm-list').innerHTML = `<div class="apm-state"><i class="fa fa-triangle-exclamation" style="color:#f59e0b;"></i><div class="apm-state-title">Gagal memuat data</div><div class="apm-state-sub">Periksa koneksi jaringan Anda</div></div>`;
 }
-
 function apmPilih(id, inv, nama, merek, model, kond, serial, lokasiStr, bagianLokasi, kat, pj, jenis) {
     _apmSelId = id;
     document.getElementById('inp-aset-id').value   = id;
     document.getElementById('inp-aset-info').value = [inv, nama, merek, model].filter(Boolean).join(' | ');
-
     const [ico] = KAT_STYLE[kat] || ['fa-toolbox'];
     const btn = document.getElementById('ap-trig-btn');
     btn.classList.add('has-aset');
-    document.getElementById('ap-trig-ico').className   = 'fa ' + ico;
-    document.getElementById('ap-trig-name').textContent = nama + '  (' + inv + ')';
-    document.getElementById('ap-trig-sub').textContent  = [merek,model].filter(Boolean).join(' · ') || 'Klik untuk ganti pilihan';
-
-    document.getElementById('asc-ico').className   = 'fa ' + ico;
+    document.getElementById('ap-trig-ico').className    = 'fa ' + ico;
+    document.getElementById('ap-trig-name').textContent  = nama + '  (' + inv + ')';
+    document.getElementById('ap-trig-sub').textContent   = [merek,model].filter(Boolean).join(' · ') || 'Klik untuk ganti pilihan';
+    document.getElementById('asc-ico').className  = 'fa ' + ico;
     document.getElementById('asc-nama').textContent = nama;
     document.getElementById('asc-inv').textContent  = inv;
-
-    // Badge jenis di kartu
     const jb = document.getElementById('asc-jenis-badge');
     jb.innerHTML = jenis === 'Medis'
         ? '<span class="asc-jenis-m"><i class="fa fa-kit-medical" style="font-size:9px;"></i> Medis</span>'
         : '<span class="asc-jenis-n"><i class="fa fa-screwdriver-wrench" style="font-size:9px;"></i> Non-Medis</span>';
-
     const kondEl = document.getElementById('asc-kond');
     kondEl.textContent = kond;
     kondEl.className   = 'asc-kond ' + (kond === 'Baik' ? 'asc-k-baik' : 'asc-k-serv');
-
     const merekRow = document.getElementById('asc-row-merek');
-    if (merek || model) { document.getElementById('asc-merek').textContent = [merek,model].filter(Boolean).join(' · '); merekRow.style.display=''; }
-    else { merekRow.style.display='none'; }
-
+    if (merek || model) { document.getElementById('asc-merek').textContent = [merek,model].filter(Boolean).join(' · '); merekRow.style.display=''; } else merekRow.style.display='none';
     const serialRow = document.getElementById('asc-row-serial');
-    if (serial) { document.getElementById('asc-serial').textContent = serial; serialRow.style.display=''; }
-    else { serialRow.style.display='none'; }
-
+    if (serial) { document.getElementById('asc-serial').textContent = serial; serialRow.style.display=''; } else serialRow.style.display='none';
     const lokasiRow = document.getElementById('asc-row-lokasi');
     if (lokasiStr) {
         document.getElementById('asc-lokasi').textContent = lokasiStr;
@@ -878,42 +815,28 @@ function apmPilih(id, inv, nama, merek, model, kond, serial, lokasiStr, bagianLo
         const selLok = document.getElementById('sel-lokasi');
         if (!selLok.value && bagianLokasi) {
             for (const opt of selLok.options) {
-                if (opt.value && opt.value.trim() === bagianLokasi.trim()) {
-                    selLok.value = opt.value; toggleManual(opt.value); break;
-                }
+                if (opt.value && opt.value.trim() === bagianLokasi.trim()) { selLok.value = opt.value; toggleManual(opt.value); break; }
             }
         }
-    } else { lokasiRow.style.display='none'; }
-
+    } else lokasiRow.style.display='none';
     const pjRow = document.getElementById('asc-row-pj');
-    if (pj) { document.getElementById('asc-pj').textContent = pj; pjRow.style.display=''; }
-    else { pjRow.style.display='none'; }
-
+    if (pj) { document.getElementById('asc-pj').textContent = pj; pjRow.style.display=''; } else pjRow.style.display='none';
     document.getElementById('ap-selected-card').classList.add('show');
     apmTutup();
 }
-
 function apmReset() {
     _apmSelId = null;
     document.getElementById('inp-aset-id').value   = '';
     document.getElementById('inp-aset-info').value = '';
     const btn = document.getElementById('ap-trig-btn');
     btn.classList.remove('has-aset');
-    document.getElementById('ap-trig-ico').className    = 'fa fa-magnifying-glass';
-    document.getElementById('ap-trig-name').textContent  = 'Cari dan pilih dari daftar aset IPSRS…';
-    document.getElementById('ap-trig-sub').textContent   = 'Klik untuk membuka daftar peralatan';
+    document.getElementById('ap-trig-ico').className   = 'fa fa-magnifying-glass';
+    document.getElementById('ap-trig-name').textContent = 'Cari dan pilih dari daftar aset IPSRS…';
+    document.getElementById('ap-trig-sub').textContent  = 'Klik untuk membuka daftar peralatan';
     document.getElementById('ap-selected-card').classList.remove('show');
 }
-
-function _esc(s) {
-    if (!s) return '';
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function _hl(html, q) {
-    if (!q||!q.trim()) return html;
-    const safe = q.trim().replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-    return html.replace(new RegExp(`(${safe})`,'gi'),'<mark class="apm-hl">$1</mark>');
-}
+function _esc(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function _hl(html, q) { if (!q||!q.trim()) return html; const safe = q.trim().replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); return html.replace(new RegExp(`(${safe})`,'gi'),'<mark class="apm-hl">$1</mark>'); }
 </script>
 
 <?php include '../includes/footer.php'; ?>

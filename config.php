@@ -13,14 +13,10 @@ define('DB_CHARSET', 'utf8mb4');
 define('APP_NAME',    'FixSmart Helpdesk');
 define('APP_VERSION', '2.0.0');
 
-// Auto-detect APP_URL — menggunakan lokasi config.php sebagai anchor tetap
-// config.php SELALU ada di root project, sehingga hasilnya konsisten
-// dari file mana pun (root, pages/, includes/, dll)
 $_protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $_host     = $_SERVER['HTTP_HOST'] ?? 'localhost';
 $_docroot  = rtrim(str_replace('\\', '/', realpath($_SERVER['DOCUMENT_ROOT'] ?? '/')), '/');
 $_cfgdir   = rtrim(str_replace('\\', '/', realpath(dirname(__FILE__))), '/');
-// Hitung path relatif: /fixsmart (atau nama folder apapun)
 $_relpath  = str_replace($_docroot, '', $_cfgdir);
 define('APP_URL', $_protocol . '://' . $_host . $_relpath);
 
@@ -61,11 +57,11 @@ try {
 // Status tiket
 // ============================================================
 define('STATUS_LIST', [
-    'menunggu'   => ['label' => 'Menunggu',         'class' => 'st-menunggu',  'icon' => 'fa-clock',         'color' => '#f39c12'],
-    'diproses'   => ['label' => 'Diproses',          'class' => 'st-diproses',  'icon' => 'fa-cogs',          'color' => '#3498db'],
-    'selesai'    => ['label' => 'Selesai',            'class' => 'st-selesai',   'icon' => 'fa-check-circle',  'color' => '#27ae60'],
-    'ditolak'    => ['label' => 'Ditolak',            'class' => 'st-ditolak',   'icon' => 'fa-times-circle',  'color' => '#e74c3c'],
-    'tidak_bisa' => ['label' => 'Tidak Bisa Ditangani','class'=> 'st-tidakbisa','icon' => 'fa-ban',            'color' => '#8e44ad'],
+    'menunggu'   => ['label' => 'Menunggu',          'class' => 'st-menunggu',  'icon' => 'fa-clock',        'color' => '#f39c12'],
+    'diproses'   => ['label' => 'Diproses',           'class' => 'st-diproses',  'icon' => 'fa-cogs',         'color' => '#3498db'],
+    'selesai'    => ['label' => 'Selesai',             'class' => 'st-selesai',   'icon' => 'fa-check-circle', 'color' => '#27ae60'],
+    'ditolak'    => ['label' => 'Ditolak',             'class' => 'st-ditolak',   'icon' => 'fa-times-circle', 'color' => '#e74c3c'],
+    'tidak_bisa' => ['label' => 'Tidak Bisa Ditangani','class' => 'st-tidakbisa','icon' => 'fa-ban',           'color' => '#8e44ad'],
 ]);
 
 // ============================================================
@@ -135,6 +131,7 @@ function generateNomor($pdo) {
 function setFlash($type, $msg) {
     $_SESSION['flash'] = ['type' => $type, 'msg' => $msg];
 }
+
 function showFlash() {
     if (!isset($_SESSION['flash'])) return '';
     $f = $_SESSION['flash'];
@@ -163,7 +160,6 @@ function timeAgo($dt) {
     return 'Baru saja';
 }
 
-// Hitung durasi dalam format "X jam Y menit" dari menit
 function formatDurasi($menit) {
     if ($menit === null) return '-';
     $menit = (int)$menit;
@@ -173,29 +169,25 @@ function formatDurasi($menit) {
     return $jam . ' jam' . ($sisa ? ' ' . $sisa . ' mnt' : '');
 }
 
-// Hitung SLA status: apakah sudah melebihi target?
 function slaStatus($durasi_menit, $target_jam) {
     if ($durasi_menit === null) return null;
     $target_menit = $target_jam * 60;
     $persen = round($durasi_menit / $target_menit * 100);
-    if ($persen <= 70)  return ['status' => 'aman',     'persen' => $persen, 'label' => 'Dalam Target', 'class' => 'sla-aman'];
-    if ($persen <= 100) return ['status' => 'warning',  'persen' => $persen, 'label' => 'Mendekati Batas', 'class' => 'sla-warning'];
-    return              ['status' => 'breach',   'persen' => $persen, 'label' => 'Melewati Target', 'class' => 'sla-breach'];
+    if ($persen <= 70)  return ['status' => 'aman',    'persen' => $persen, 'label' => 'Dalam Target',    'class' => 'sla-aman'];
+    if ($persen <= 100) return ['status' => 'warning', 'persen' => $persen, 'label' => 'Mendekati Batas', 'class' => 'sla-warning'];
+    return                     ['status' => 'breach',  'persen' => $persen, 'label' => 'Melewati Target', 'class' => 'sla-breach'];
 }
 
-// Hitung waktu berjalan dari submit hingga sekarang (jika belum selesai)
 function durasiSekarang($waktu_submit) {
     if (!$waktu_submit) return null;
     $diff = (new DateTime())->diff(new DateTime($waktu_submit));
     return ($diff->days * 1440) + ($diff->h * 60) + $diff->i;
 }
 
-// Helper: ambil daftar bagian aktif dari database
 function getBagianList($pdo) {
     return $pdo->query("SELECT * FROM bagian WHERE status='aktif' ORDER BY urutan ASC, nama ASC")->fetchAll();
 }
 
-// Helper: ambil semua settings ke array key=>value
 function getSettings($pdo) {
     $rows = $pdo->query("SELECT `key`, `value` FROM settings")->fetchAll();
     $out = [];
@@ -203,8 +195,14 @@ function getSettings($pdo) {
     return $out;
 }
 
-// Helper: kirim notifikasi Telegram
-function sendTelegram($pdo, $message) {
+// ============================================================
+// Notifikasi Telegram — IT
+// Dipanggil dari: proses tiket IT (buat, proses, selesai, tolak, komentar)
+// Keys settings: telegram_enabled, telegram_bot_token, telegram_chat_id
+//                telegram_notif_tiket_baru, telegram_notif_diproses,
+//                telegram_notif_selesai, telegram_notif_ditolak, telegram_notif_komentar
+// ============================================================
+function sendTelegram(PDO $pdo, string $message): bool {
     $cfg = getSettings($pdo);
     if (empty($cfg['telegram_enabled']) || $cfg['telegram_enabled'] != '1') return false;
     if (empty($cfg['telegram_bot_token']) || empty($cfg['telegram_chat_id']))  return false;
@@ -221,6 +219,57 @@ function sendTelegram($pdo, $message) {
         'content' => $data,
         'timeout' => 5,
     ]]);
-    $result = @file_get_contents($url, false, $ctx);
-    return $result !== false;
+    return @file_get_contents($url, false, $ctx) !== false;
+}
+
+// ============================================================
+// Notifikasi Telegram — IPSRS
+// Dipanggil dari: proses tiket IPSRS (buat, proses, selesai, tolak, komentar)
+// Keys settings: ipsrs_telegram_enabled, ipsrs_telegram_bot_token, ipsrs_telegram_chat_id
+//                ipsrs_telegram_notif_tiket_baru, ipsrs_telegram_notif_diproses,
+//                ipsrs_telegram_notif_selesai, ipsrs_telegram_notif_ditolak,
+//                ipsrs_telegram_notif_komentar
+// ============================================================
+function sendTelegramIpsrs(PDO $pdo, string $message): bool {
+    $cfg = getSettings($pdo);
+    if (empty($cfg['ipsrs_telegram_enabled']) || $cfg['ipsrs_telegram_enabled'] != '1') return false;
+    if (empty($cfg['ipsrs_telegram_bot_token']) || empty($cfg['ipsrs_telegram_chat_id'])) return false;
+
+    $url  = 'https://api.telegram.org/bot' . $cfg['ipsrs_telegram_bot_token'] . '/sendMessage';
+    $data = http_build_query([
+        'chat_id'    => $cfg['ipsrs_telegram_chat_id'],
+        'text'       => $message,
+        'parse_mode' => 'HTML',
+    ]);
+    $ctx = stream_context_create(['http' => [
+        'method'  => 'POST',
+        'header'  => "Content-Type: application/x-www-form-urlencoded\r\n",
+        'content' => $data,
+        'timeout' => 5,
+    ]]);
+    return @file_get_contents($url, false, $ctx) !== false;
+}
+
+// ============================================================
+// Helper: cek apakah notif event tertentu aktif, lalu kirim
+//
+// Contoh penggunaan di proses tiket IT:
+//   sendTelegramEvent($pdo, 'tiket_baru', $msg);
+//
+// Contoh penggunaan di proses tiket IPSRS:
+//   sendTelegramEvent($pdo, 'tiket_baru', $msg, 'ipsrs');
+// ============================================================
+function sendTelegramEvent(PDO $pdo, string $event, string $message, string $saluran = 'it'): bool {
+    $cfg    = getSettings($pdo);
+    $prefix = $saluran === 'ipsrs' ? 'ipsrs_' : '';
+
+    // Cek apakah event ini diaktifkan
+    $notif_key = $prefix . 'telegram_notif_' . $event; // misal: telegram_notif_tiket_baru
+    if (empty($cfg[$notif_key]) || $cfg[$notif_key] != '1') return false;
+
+    // Kirim ke saluran yang sesuai
+    if ($saluran === 'ipsrs') {
+        return sendTelegramIpsrs($pdo, $message);
+    }
+    return sendTelegram($pdo, $message);
 }
