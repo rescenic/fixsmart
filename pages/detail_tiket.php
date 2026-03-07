@@ -26,52 +26,26 @@ $teknisi_list = hasRole(['admin','teknisi']) ? $pdo->query("SELECT * FROM users 
 
 // ── HELPER: Upload foto bukti ─────────────────────────────────────────────────
 function uploadFotoBukti($pdo, $tiket_id, $user_id) {
-    // Cek apakah ada file yang dikirim
-    if (!isset($_FILES['foto_bukti']) || empty($_FILES['foto_bukti']['name'][0])) {
-        return 0;
-    }
-
-    // Path absolut ke fixsmart/uploads/tiket_foto/
-    // __FILE__ = /path/ke/fixsmart/pages/detail_tiket.php
-    // dirname(__FILE__)  = /path/ke/fixsmart/pages
-    // dirname(dirname(__FILE__)) = /path/ke/fixsmart
+    if (!isset($_FILES['foto_bukti']) || empty($_FILES['foto_bukti']['name'][0])) return 0;
     $root_dir  = dirname(dirname(__FILE__));
     $upload_dir = $root_dir . '/uploads/tiket_foto/';
-
-    // Buat folder jika belum ada
-    if (!is_dir($upload_dir)) {
-        mkdir($upload_dir, 0755, true);
-    }
-
-    // Pastikan folder bisa ditulis
-    if (!is_writable($upload_dir)) {
-        return 0;
-    }
-
+    if (!is_dir($upload_dir)) mkdir($upload_dir, 0755, true);
+    if (!is_writable($upload_dir)) return 0;
     $allowed_ext  = array('jpg','jpeg','png','gif','webp');
     $allowed_mime = array('image/jpeg','image/png','image/gif','image/webp');
-    $max_size     = 5 * 1024 * 1024; // 5 MB
+    $max_size     = 5 * 1024 * 1024;
     $uploaded     = 0;
-
     foreach ($_FILES['foto_bukti']['tmp_name'] as $i => $tmp) {
-        // Skip jika ada error upload
         if ($_FILES['foto_bukti']['error'][$i] !== UPLOAD_ERR_OK) continue;
-        // Skip jika ukuran melebihi batas
         if ($_FILES['foto_bukti']['size'][$i] > $max_size) continue;
-        // Cek MIME type
         $mime = mime_content_type($tmp);
         if (!in_array($mime, $allowed_mime)) continue;
-        // Cek ekstensi
         $ori = $_FILES['foto_bukti']['name'][$i];
         $ext = strtolower(pathinfo($ori, PATHINFO_EXTENSION));
         if (!in_array($ext, $allowed_ext)) continue;
-
-        // Nama file unik
         $safe = 'tiket_' . $tiket_id . '_' . time() . '_' . $i . '.' . $ext;
         $dest = $upload_dir . $safe;
-
         if (move_uploaded_file($tmp, $dest)) {
-            // Path relatif dari root project disimpan ke DB
             $pdo->prepare("INSERT INTO tiket_foto (tiket_id,user_id,nama_file,path) VALUES (?,?,?,?)")
                 ->execute(array($tiket_id, $user_id, $ori, 'uploads/tiket_foto/' . $safe));
             $uploaded++;
@@ -167,13 +141,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ->execute(array($new_status, $catatan ? $catatan : null, $_SESSION['user_id'], $id));
 
             $ket_foto = $jml_foto ? " ($jml_foto foto bukti diupload)" : '';
-            if ($new_status === 'selesai') {
-                $ket = 'Tiket selesai ditangani.' . $ket_foto;
-            } elseif ($new_status === 'ditolak') {
-                $ket = 'Tiket ditolak. Alasan: ' . $catatan . $ket_foto;
-            } else {
-                $ket = 'Tidak dapat ditangani. Keterangan: ' . $catatan . $ket_foto;
-            }
+            if ($new_status === 'selesai')       $ket = 'Tiket selesai ditangani.' . $ket_foto;
+            elseif ($new_status === 'ditolak')   $ket = 'Tiket ditolak. Alasan: ' . $catatan . $ket_foto;
+            else                                 $ket = 'Tidak dapat ditangani. Keterangan: ' . $catatan . $ket_foto;
+
             $pdo->prepare("INSERT INTO tiket_log (tiket_id,user_id,status_dari,status_ke,keterangan) VALUES (?,?,?,?,?)")
                 ->execute(array($id, $_SESSION['user_id'], $t['status'], $new_status, $ket));
 
@@ -190,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // Upload foto saja (tanpa ubah status)
+    // Upload foto saja
     if ($act === 'upload_foto' && hasRole(array('admin','teknisi')) && !$is_final) {
         $jml_foto = uploadFotoBukti($pdo, $id, $_SESSION['user_id']);
         if ($jml_foto > 0) {
@@ -245,12 +216,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         redirect(APP_URL.'/pages/detail_tiket.php?id='.$id.'#diskusi');
     }
+
+    // ── SIMPAN BERITA ACARA ──────────────────────────────────────────────────
+    if ($act === 'simpan_ba' && hasRole(array('admin','teknisi')) && $t['status'] === 'tidak_bisa') {
+        $nomor_ba = trim($_POST['nomor_ba'] ?? '');
+        if (!$nomor_ba) {
+            $tahun    = date('Y');
+            $last_seq = (int)$pdo->query("SELECT COUNT(*) FROM berita_acara WHERE YEAR(created_at)=$tahun")->fetchColumn();
+            $nomor_ba = 'BA-IT-' . $tahun . '-' . str_pad($last_seq + 1, 4, '0', STR_PAD_LEFT);
+        }
+        $fields = [
+            'nomor_ba'            => $nomor_ba,
+            'tanggal_ba'          => $_POST['tanggal_ba']          ?: date('Y-m-d'),
+            'jenis_tindak'        => $_POST['jenis_tindak']        ?? 'lainnya',
+            'uraian_masalah'      => trim($_POST['uraian_masalah'] ?? ''),
+            'kesimpulan'          => trim($_POST['kesimpulan']     ?? ''),
+            'tindak_lanjut'       => trim($_POST['tindak_lanjut']  ?? ''),
+            'nilai_estimasi'      => strlen(trim($_POST['nilai_estimasi'] ?? '')) ? (int)$_POST['nilai_estimasi'] : null,
+            'diketahui_nama'      => trim($_POST['diketahui_nama']      ?? ''),
+            'diketahui_jabatan'   => trim($_POST['diketahui_jabatan']   ?? ''),
+            'mengetahui_nama'     => trim($_POST['mengetahui_nama']     ?? ''),
+            'mengetahui_jabatan'  => trim($_POST['mengetahui_jabatan']  ?? ''),
+            'catatan_tambahan'    => trim($_POST['catatan_tambahan']    ?? ''),
+        ];
+        $ba_exists = $pdo->prepare("SELECT id FROM berita_acara WHERE tiket_id=?");
+        $ba_exists->execute([$id]);
+        $ba_existing_id = $ba_exists->fetchColumn();
+
+        if ($ba_existing_id) {
+            $pdo->prepare("UPDATE berita_acara SET nomor_ba=?,tanggal_ba=?,jenis_tindak=?,
+                uraian_masalah=?,kesimpulan=?,tindak_lanjut=?,nilai_estimasi=?,
+                diketahui_nama=?,diketahui_jabatan=?,mengetahui_nama=?,mengetahui_jabatan=?,
+                catatan_tambahan=?,updated_at=NOW() WHERE tiket_id=?")
+                ->execute([...array_values($fields), $id]);
+            setFlash('success','Berita Acara berhasil diperbarui.');
+        } else {
+            $pdo->prepare("INSERT INTO berita_acara (tiket_id,nomor_ba,tanggal_ba,jenis_tindak,
+                uraian_masalah,kesimpulan,tindak_lanjut,nilai_estimasi,
+                diketahui_nama,diketahui_jabatan,mengetahui_nama,mengetahui_jabatan,
+                catatan_tambahan,dibuat_oleh,created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())")
+                ->execute([$id, ...array_values($fields), $_SESSION['user_id']]);
+            $pdo->prepare("INSERT INTO tiket_log (tiket_id,user_id,status_dari,status_ke,keterangan) VALUES (?,?,?,?,?)")
+                ->execute([$id,$_SESSION['user_id'],'tidak_bisa','tidak_bisa','Berita Acara dibuat: '.$nomor_ba]);
+            setFlash('success','Berita Acara <strong>'.htmlspecialchars($nomor_ba).'</strong> berhasil dibuat.');
+        }
+        redirect(APP_URL.'/pages/detail_tiket.php?id='.$id.'#t-ba');
+    }
 }
 
 // ── Refresh tiket & foto setelah POST ────────────────────────────────────────
 $st->execute(array($id)); $t = $st->fetch();
 $fotos_q = $pdo->prepare("SELECT f.*,u.nama as uploader FROM tiket_foto f LEFT JOIN users u ON u.id=f.user_id WHERE f.tiket_id=? ORDER BY f.created_at ASC");
 $fotos_q->execute(array($id)); $fotos = $fotos_q->fetchAll();
+
+// ── Berita Acara ─────────────────────────────────────────────────────────────
+$ba = null;
+if ($t['status'] === 'tidak_bisa') {
+    $ba_q = $pdo->prepare("SELECT ba.*,u.nama as dibuat_nama,u.divisi as dibuat_divisi
+        FROM berita_acara ba LEFT JOIN users u ON u.id=ba.dibuat_oleh WHERE ba.tiket_id=? LIMIT 1");
+    $ba_q->execute([$id]);
+    $ba = $ba_q->fetch();
+}
 
 $is_final    = in_array($t['status'], array('selesai','ditolak','tidak_bisa'));
 $dur_respon  = $t['durasi_respon_menit'];
@@ -276,6 +303,7 @@ $back_url    = hasRole('user') ? APP_URL.'/pages/tiket_saya.php' : APP_URL.'/pag
 include '../includes/header.php';
 ?>
 <style>
+/* ─── Foto & Upload ─────────────────────────────────────── */
 .foto-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;}
 .foto-item{position:relative;width:90px;height:90px;border-radius:8px;overflow:hidden;border:2px solid #e5e7eb;cursor:pointer;transition:transform .15s,border-color .15s,box-shadow .15s;}
 .foto-item:hover{transform:scale(1.04);border-color:var(--primary,#3b82f6);box-shadow:0 4px 12px rgba(59,130,246,.2);}
@@ -291,6 +319,11 @@ include '../includes/header.php';
 .prev-thumb{position:relative;width:75px;height:75px;border-radius:6px;overflow:hidden;border:2px solid #e5e7eb;}
 .prev-thumb img{width:100%;height:100%;object-fit:cover;}
 .prev-thumb .rm-prev{position:absolute;top:2px;right:2px;background:rgba(220,38,38,.85);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.foto-section{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:18px;}
+.foto-section-title{font-size:12px;font-weight:700;color:#334155;display:flex;align-items:center;gap:6px;margin-bottom:4px;}
+.foto-count-badge{background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;padding:1px 8px;border-radius:20px;}
+
+/* ─── Lightbox ──────────────────────────────────────────── */
 #lightbox{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.9);align-items:center;justify-content:center;flex-direction:column;}
 #lightbox.open{display:flex;}
 #lightbox img{max-width:90vw;max-height:80vh;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,.5);}
@@ -299,9 +332,76 @@ include '../includes/header.php';
 #lightbox-nav{display:flex;gap:14px;margin-top:12px;}
 #lightbox-nav button{background:rgba(255,255,255,.15);color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:13px;}
 #lightbox-nav button:hover{background:rgba(255,255,255,.28);}
-.foto-section{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:18px;}
-.foto-section-title{font-size:12px;font-weight:700;color:#334155;display:flex;align-items:center;gap:6px;margin-bottom:4px;}
-.foto-count-badge{background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;padding:1px 8px;border-radius:20px;}
+
+/* ─── Tab Berita Acara ──────────────────────────────────── */
+.tab-btn-ba-wajib {
+    position:relative;
+    animation: pulse-tab 2s infinite;
+}
+@keyframes pulse-tab {
+    0%,100%{box-shadow:none;}
+    50%{box-shadow:0 0 0 3px rgba(220,38,38,.3);}
+}
+.ba-wajib-banner {
+    background:linear-gradient(135deg,#dc2626,#b91c1c);
+    border-radius:8px;padding:12px 15px;margin-bottom:16px;
+    display:flex;align-items:center;gap:12px;
+}
+.ba-wajib-banner .ico {font-size:22px;flex-shrink:0;}
+.ba-wajib-banner .txt {flex:1;}
+.ba-wajib-banner .txt strong {font-size:12.5px;color:#fff;display:block;margin-bottom:2px;}
+.ba-wajib-banner .txt span {font-size:11px;color:rgba(255,255,255,.8);}
+
+.jenis-card {
+    display:flex;align-items:center;gap:8px;cursor:pointer;
+    padding:9px 13px;border:2px solid #e2e8f0;border-radius:8px;
+    background:#fff;font-size:12px;font-weight:500;color:#374151;
+    transition:all .15s;flex:1;min-width:140px;
+}
+.jenis-card:hover{border-color:#94a3b8;background:#f8fafc;}
+.jenis-card input{display:none;}
+.jenis-card.selected-pembelian_baru      {border-color:#1d4ed8;background:#dbeafe;color:#1e40af;font-weight:700;}
+.jenis-card.selected-perbaikan_eksternal {border-color:#d97706;background:#fef3c7;color:#92400e;font-weight:700;}
+.jenis-card.selected-penghapusan_aset    {border-color:#dc2626;background:#fee2e2;color:#991b1b;font-weight:700;}
+.jenis-card.selected-penggantian_suku_cadang{border-color:#059669;background:#d1fae5;color:#065f46;font-weight:700;}
+.jenis-card.selected-lainnya             {border-color:#7c3aed;background:#ede9fe;color:#5b21b6;font-weight:700;}
+
+.ba-summary-card {
+    background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;
+    overflow:hidden;margin-bottom:14px;
+}
+.ba-summary-header {
+    background:linear-gradient(135deg,#0f172a,#1e293b);
+    padding:11px 15px;display:flex;align-items:center;justify-content:space-between;
+}
+.ba-summary-header .no {font-size:12px;font-weight:700;color:#00e5b0;font-family:monospace;}
+.ba-summary-header .tgl {font-size:11px;color:rgba(255,255,255,.5);}
+.ba-summary-body {padding:13px 15px;}
+.ba-jenis-badge {
+    display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;
+    padding:5px 13px;border-radius:20px;margin-bottom:10px;
+}
+.ba-field {margin-bottom:8px;}
+.ba-field-label {font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;}
+.ba-field-value {font-size:12px;color:#334155;line-height:1.7;}
+.ba-estimasi {
+    background:#fffbeb;border:1px solid #fde68a;border-radius:6px;
+    padding:9px 13px;margin-top:10px;display:flex;align-items:center;gap:10px;
+}
+.ba-estimasi .lbl {font-size:10px;color:#92400e;font-weight:700;}
+.ba-estimasi .val {font-size:14px;font-weight:700;color:#d97706;}
+.ttd-row {
+    display:flex;gap:10px;margin-top:14px;padding-top:12px;
+    border-top:1px solid #f1f5f9;
+}
+.ttd-box {
+    flex:1;text-align:center;background:#f8fafc;border:1px dashed #cbd5e1;
+    border-radius:6px;padding:10px 8px;
+}
+.ttd-box .role {font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:28px;}
+.ttd-box .line {border-top:1px solid #334155;margin:0 10px 4px;}
+.ttd-box .nama {font-size:11px;font-weight:700;color:#0f172a;}
+.ttd-box .jabatan {font-size:10px;color:#64748b;}
 </style>
 
 <div class="page-header">
@@ -329,6 +429,15 @@ include '../includes/header.php';
               <i class="fa fa-images"></i> <?= count($fotos) ?> foto
             </span>
             <?php endif; ?>
+            <?php if ($t['status']==='tidak_bisa' && $ba): ?>
+            <span style="background:#d1fae5;color:#065f46;font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;">
+              <i class="fa fa-file-alt"></i> BA: <?= clean($ba['nomor_ba']) ?>
+            </span>
+            <?php elseif ($t['status']==='tidak_bisa' && !$ba): ?>
+            <span style="background:#fee2e2;color:#dc2626;font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;">
+              <i class="fa fa-exclamation-triangle"></i> Berita Acara Belum Dibuat
+            </span>
+            <?php endif; ?>
           </div>
           <h3 style="font-size:16px;color:#333;font-weight:700;margin-bottom:6px;"><?= clean($t['judul']) ?></h3>
           <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#aaa;">
@@ -337,12 +446,16 @@ include '../includes/header.php';
             <span><i class="fa fa-clock"></i> <?= formatTanggal($t['waktu_submit'],true) ?></span>
           </div>
         </div>
-        <div style="display:flex;gap:7px;flex-shrink:0;">
+        <div style="display:flex;gap:7px;flex-shrink:0;flex-wrap:wrap;">
           <a href="<?= $back_url ?>" class="btn btn-default btn-sm"><i class="fa fa-arrow-left"></i> Kembali</a>
+          <?php if ($t['status']==='tidak_bisa' && $ba): ?>
+          <a href="<?= APP_URL ?>/pages/cetak_berita_acara.php?tiket_id=<?= $id ?>" target="_blank"
+             class="btn btn-success btn-sm"><i class="fa fa-file-pdf"></i> Cetak BA</a>
+          <?php endif; ?>
           <?php if (!$is_final && hasRole(array('admin','teknisi')) && $t['status']==='menunggu'): ?>
           <form method="POST" style="display:inline;">
             <input type="hidden" name="action" value="ambil">
-            <button type="submit" class="btn btn-primary btn-sm"><i class="fa fa-hand-pointer"></i> Ambil & Proses</button>
+            <button type="submit" class="btn btn-primary btn-sm"><i class="fa fa-hand-pointer"></i> Ambil &amp; Proses</button>
           </form>
           <?php endif; ?>
         </div>
@@ -355,12 +468,27 @@ include '../includes/header.php';
       <div class="panel">
         <div class="panel-hd" style="padding:0 15px;">
           <div class="tabs" style="margin:0;">
-            <button class="tab-btn active" onclick="switchTab(this,'t-info')">Detail</button>
-            <button class="tab-btn" onclick="switchTab(this,'t-diskusi')">Diskusi (<?= count($komentar) ?>)</button>
+            <button class="tab-btn active" onclick="switchTab(this,'t-info')"><i class="fa fa-info-circle"></i> Detail</button>
+            <button class="tab-btn" onclick="switchTab(this,'t-diskusi')"><i class="fa fa-comments"></i> Diskusi (<?= count($komentar) ?>)</button>
             <?php if (hasRole(array('admin','teknisi')) && !$is_final): ?>
-            <button class="tab-btn" onclick="switchTab(this,'t-aksi')" id="btn-tab-aksi">Tindakan IT</button>
+            <button class="tab-btn" onclick="switchTab(this,'t-aksi')" id="btn-tab-aksi"><i class="fa fa-tools"></i> Tindakan IT</button>
             <?php elseif ($is_final && count($fotos)): ?>
-            <button class="tab-btn" onclick="switchTab(this,'t-foto-view')">Foto Bukti (<?= count($fotos) ?>)</button>
+            <button class="tab-btn" onclick="switchTab(this,'t-foto-view')"><i class="fa fa-images"></i> Foto Bukti (<?= count($fotos) ?>)</button>
+            <?php endif; ?>
+            <?php if ($t['status']==='tidak_bisa' && hasRole(array('admin','teknisi'))): ?>
+            <button class="tab-btn <?= !$ba ? 'tab-btn-ba-wajib' : '' ?>"
+                    onclick="switchTab(this,'t-ba')" id="btn-tab-ba"
+                    style="<?= !$ba ? 'color:#dc2626;font-weight:800;border-bottom-color:#dc2626;' : 'color:#059669;font-weight:700;' ?>">
+              <i class="fa fa-file-contract"></i> Berita Acara
+              <?php if (!$ba): ?>
+              <span style="background:#dc2626;color:#fff;font-size:9px;font-weight:700;
+                    padding:1px 6px;border-radius:8px;margin-left:3px;vertical-align:middle;">WAJIB</span>
+              <?php else: ?>
+              <span style="background:#d1fae5;color:#059669;font-size:9px;font-weight:700;
+                    padding:1px 6px;border-radius:8px;margin-left:3px;vertical-align:middle;">
+                <i class="fa fa-check"></i> Selesai</span>
+              <?php endif; ?>
+            </button>
             <?php endif; ?>
           </div>
         </div>
@@ -406,6 +534,17 @@ include '../includes/header.php';
             <div style="background:#fff8f8;border:1px solid #fca5a5;border-radius:4px;padding:10px 12px;">
               <div style="font-size:11px;font-weight:700;color:#991b1b;margin-bottom:4px;"><i class="fa fa-info-circle"></i> Keterangan IT</div>
               <p style="font-size:12px;color:#555;line-height:1.7;"><?= clean($t['catatan_penolakan']) ?></p>
+            </div>
+            <?php endif; ?>
+            <?php if ($t['status']==='tidak_bisa' && $ba): ?>
+            <hr class="divider">
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:10px 13px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+              <div>
+                <div style="font-size:11px;font-weight:700;color:#065f46;margin-bottom:2px;"><i class="fa fa-file-contract"></i> Berita Acara: <?= clean($ba['nomor_ba']) ?></div>
+                <div style="font-size:11px;color:#16a34a;"><?= date('d M Y',strtotime($ba['tanggal_ba'])) ?> &bull; <?= clean($ba['dibuat_nama']??'-') ?></div>
+              </div>
+              <a href="<?= APP_URL ?>/pages/cetak_berita_acara.php?tiket_id=<?= $id ?>" target="_blank"
+                 class="btn btn-success btn-sm"><i class="fa fa-file-pdf"></i> Cetak / PDF</a>
             </div>
             <?php endif; ?>
             <?php if (count($fotos)): ?>
@@ -470,7 +609,6 @@ include '../includes/header.php';
           <!-- TAB TINDAKAN IT -->
           <?php if (hasRole(array('admin','teknisi')) && !$is_final): ?>
           <div id="t-aksi" class="tab-c">
-
             <?php if (hasRole('admin')): ?>
             <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #f0f0f0;">
               <p style="font-size:12px;font-weight:700;color:#333;margin-bottom:4px;">Assign Teknisi</p>
@@ -506,17 +644,12 @@ include '../includes/header.php';
             </div>
             <?php endif; ?>
 
-            <!-- UPLOAD FOTO BUKTI (mandiri, tanpa ubah status) -->
             <div class="foto-section">
               <div class="foto-section-title">
-                <i class="fa fa-camera text-primary"></i>
-                Upload Foto Bukti Pengerjaan
-                <?php if (count($fotos)): ?>
-                <span class="foto-count-badge"><?= count($fotos) ?> tersimpan</span>
-                <?php endif; ?>
+                <i class="fa fa-camera text-primary"></i> Upload Foto Bukti Pengerjaan
+                <?php if (count($fotos)): ?><span class="foto-count-badge"><?= count($fotos) ?> tersimpan</span><?php endif; ?>
               </div>
-              <p style="font-size:11px;color:#94a3b8;margin-bottom:12px;">Format JPG / PNG / WebP &mdash; maks 5 MB per file &mdash; bisa lebih dari satu</p>
-
+              <p style="font-size:11px;color:#94a3b8;margin-bottom:12px;">Format JPG / PNG / WebP &mdash; maks 5 MB per file</p>
               <?php if (count($fotos)): ?>
               <div style="margin-bottom:14px;">
                 <div style="font-size:11px;color:#64748b;font-weight:600;margin-bottom:7px;"><i class="fa fa-check-circle" style="color:#10b981;"></i> Foto tersimpan:</div>
@@ -537,15 +670,13 @@ include '../includes/header.php';
                 </div>
               </div>
               <?php endif; ?>
-
               <form method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="upload_foto">
                 <input type="file" name="foto_bukti[]" id="input-foto" accept="image/*" multiple style="display:none;" onchange="previewFoto(this)">
                 <div class="drop-zone" id="drop-zone" onclick="document.getElementById('input-foto').click()">
                   <i class="fa fa-cloud-upload-alt"></i>
                   <strong>Klik untuk pilih foto</strong>
-                  atau seret &amp; lepas ke sini<br>
-                  <span style="font-size:11px;">JPG &middot; PNG &middot; WebP &middot; GIF &mdash; maks 5 MB/file</span>
+                  atau seret &amp; lepas ke sini
                 </div>
                 <div id="preview-grid"></div>
                 <button type="submit" class="btn btn-info btn-sm" id="btn-upload-foto" style="display:none;margin-top:10px;">
@@ -554,7 +685,6 @@ include '../includes/header.php';
               </form>
             </div>
 
-            <!-- UPDATE STATUS TIKET -->
             <p style="font-size:12px;font-weight:700;color:#333;margin-bottom:4px;"><i class="fa fa-edit text-primary"></i> Update Status Tiket</p>
             <p style="font-size:11px;color:#aaa;margin-bottom:12px;">Anda juga bisa melampirkan foto bukti sekaligus saat update status.</p>
             <form method="POST" enctype="multipart/form-data">
@@ -575,7 +705,8 @@ include '../includes/header.php';
               </div>
               <div class="form-group">
                 <label>Catatan / Alasan <span id="req-note"></span></label>
-                <textarea name="catatan_penolakan" id="note-input" class="form-control" placeholder="Tuliskan hasil penanganan, alasan penolakan, atau keterangan tidak bisa ditangani..." rows="3"></textarea>
+                <textarea name="catatan_penolakan" id="note-input" class="form-control"
+                  placeholder="Tuliskan hasil penanganan, alasan, atau keterangan tidak bisa ditangani..." rows="3"></textarea>
               </div>
               <div class="form-group">
                 <label style="display:flex;align-items:center;gap:6px;">
@@ -585,36 +716,288 @@ include '../includes/header.php';
                 <input type="file" name="foto_bukti[]" id="input-foto-status" accept="image/*" multiple style="display:none;" onchange="previewFotoStatus(this)">
                 <div class="drop-zone" id="drop-zone-status" onclick="document.getElementById('input-foto-status').click()" style="padding:14px;">
                   <i class="fa fa-images" style="font-size:20px;"></i>
-                  Klik atau seret foto bukti<br>
-                  <span style="font-size:11px;">JPG &middot; PNG &middot; WebP &mdash; maks 5 MB/file</span>
+                  Klik atau seret foto bukti
                 </div>
                 <div id="preview-grid-status"></div>
               </div>
               <button type="submit" class="btn btn-primary"><i class="fa fa-save"></i> Simpan Perubahan</button>
             </form>
-
           </div>
+          <?php endif; ?>
+
+          <!-- ══════════════════════════════════════════════ -->
+          <!-- TAB BERITA ACARA                               -->
+          <!-- ══════════════════════════════════════════════ -->
+          <?php if ($t['status']==='tidak_bisa' && hasRole(array('admin','teknisi'))): ?>
+          <div id="t-ba" class="tab-c">
+
+            <?php if (!$ba): ?>
+            <!-- BANNER WAJIB -->
+            <div class="ba-wajib-banner">
+              <div class="ico">&#9888;&#65039;</div>
+              <div class="txt">
+                <strong>Berita Acara Wajib Dibuat!</strong>
+                <span>Tiket berstatus "Tidak Bisa Ditangani". Buat Berita Acara sebagai dokumen resmi
+                  untuk tindak lanjut (pembelian baru, perbaikan vendor, penghapusan aset, dll).</span>
+              </div>
+            </div>
+            <?php else: ?>
+            <!-- SUMMARY BA YANG SUDAH ADA -->
+            <?php
+            $jenis_cfg = [
+              'pembelian_baru'          => ['&#128722;','Pengajuan Pembelian Perangkat Baru',    '#dbeafe','#1e40af'],
+              'perbaikan_eksternal'     => ['&#128295;','Perbaikan oleh Pihak Eksternal/Vendor',  '#fef3c7','#92400e'],
+              'penghapusan_aset'        => ['&#128465;','Penghapusan Aset (Write-Off)',            '#fee2e2','#991b1b'],
+              'penggantian_suku_cadang' => ['&#128297;','Penggantian Suku Cadang',                 '#d1fae5','#065f46'],
+              'lainnya'                 => ['&#128203;','Tindak Lanjut Lainnya',                   '#ede9fe','#5b21b6'],
+            ];
+            [$j_ico,$j_lbl,$j_bg,$j_col] = $jenis_cfg[$ba['jenis_tindak']] ?? $jenis_cfg['lainnya'];
+            ?>
+            <div class="ba-summary-card">
+              <div class="ba-summary-header">
+                <span class="no"><i class="fa fa-file-contract" style="margin-right:5px;color:rgba(255,255,255,.4);"></i><?= clean($ba['nomor_ba']) ?></span>
+                <div style="text-align:right;">
+                  <div class="tgl"><?= date('d M Y',strtotime($ba['tanggal_ba'])) ?></div>
+                  <div class="tgl">Dibuat: <?= clean($ba['dibuat_nama']??'-') ?></div>
+                </div>
+              </div>
+              <div class="ba-summary-body">
+                <div class="ba-jenis-badge" style="background:<?= $j_bg ?>;color:<?= $j_col ?>;">
+                  <?= $j_ico ?> &nbsp;<?= $j_lbl ?>
+                </div>
+                <?php if ($ba['uraian_masalah']): ?>
+                <div class="ba-field">
+                  <div class="ba-field-label">Uraian Permasalahan</div>
+                  <div class="ba-field-value"><?= nl2br(clean(mb_strimwidth($ba['uraian_masalah'],0,200,'...'))) ?></div>
+                </div>
+                <?php endif; ?>
+                <?php if ($ba['tindak_lanjut']): ?>
+                <div class="ba-field">
+                  <div class="ba-field-label">Tindak Lanjut</div>
+                  <div class="ba-field-value"><?= nl2br(clean($ba['tindak_lanjut'])) ?></div>
+                </div>
+                <?php endif; ?>
+                <?php if ($ba['nilai_estimasi']): ?>
+                <div class="ba-estimasi">
+                  <div>
+                    <div class="lbl">ESTIMASI BIAYA</div>
+                    <div class="val">Rp <?= number_format($ba['nilai_estimasi'],0,',','.') ?></div>
+                  </div>
+                </div>
+                <?php endif; ?>
+                <?php if ($ba['diketahui_nama'] || $ba['mengetahui_nama']): ?>
+                <div class="ttd-row">
+                  <div class="ttd-box">
+                    <div class="role">Dibuat Oleh</div>
+                    <div class="line"></div>
+                    <div class="nama"><?= clean($ba['dibuat_nama']??'—') ?></div>
+                    <div class="jabatan"><?= clean($ba['dibuat_divisi']??'Staff IT') ?></div>
+                  </div>
+                  <?php if ($ba['diketahui_nama']): ?>
+                  <div class="ttd-box">
+                    <div class="role">Diketahui</div>
+                    <div class="line"></div>
+                    <div class="nama"><?= clean($ba['diketahui_nama']) ?></div>
+                    <div class="jabatan"><?= clean($ba['diketahui_jabatan']??'—') ?></div>
+                  </div>
+                  <?php endif; ?>
+                  <?php if ($ba['mengetahui_nama']): ?>
+                  <div class="ttd-box">
+                    <div class="role">Menyetujui</div>
+                    <div class="line"></div>
+                    <div class="nama"><?= clean($ba['mengetahui_nama']) ?></div>
+                    <div class="jabatan"><?= clean($ba['mengetahui_jabatan']??'—') ?></div>
+                  </div>
+                  <?php endif; ?>
+                </div>
+                <?php endif; ?>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+              <a href="<?= APP_URL ?>/pages/cetak_berita_acara.php?tiket_id=<?= $id ?>" target="_blank"
+                 class="btn btn-success"><i class="fa fa-file-pdf"></i> Cetak / Simpan PDF</a>
+              <button onclick="document.getElementById('form-ba').style.display='block';
+                               document.getElementById('ba-summary-actions').style.display='none';"
+                      class="btn btn-warning" id="ba-summary-actions-btn">
+                <i class="fa fa-pen"></i> Edit Berita Acara
+              </button>
+            </div>
+            <?php endif; ?>
+
+            <!-- FORM INPUT / EDIT BA -->
+            <div id="form-ba" <?= $ba ? 'style="display:none;"' : '' ?>>
+              <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #1d4ed8;">
+                <i class="fa fa-file-contract" style="color:#1d4ed8;"></i>
+                <?= $ba ? 'Edit Berita Acara' : 'Isi Form Berita Acara' ?>
+              </div>
+              <form method="POST">
+                <input type="hidden" name="action" value="simpan_ba">
+
+                <!-- Nomor & Tanggal -->
+                <div class="form-row" style="margin-bottom:12px;">
+                  <div>
+                    <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">
+                      No. Berita Acara
+                      <span style="font-size:10px;color:#94a3b8;font-weight:400;">(kosong = otomatis)</span>
+                    </label>
+                    <input type="text" name="nomor_ba" class="form-control"
+                      value="<?= clean($ba['nomor_ba']??'') ?>"
+                      placeholder="BA-IT-<?= date('Y') ?>-0001 (otomatis jika kosong)"
+                      style="font-family:monospace;">
+                  </div>
+                  <div>
+                    <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">
+                      Tanggal BA <span style="color:#ef4444;">*</span>
+                    </label>
+                    <input type="date" name="tanggal_ba" class="form-control" required
+                      value="<?= clean($ba['tanggal_ba']??date('Y-m-d')) ?>">
+                  </div>
+                </div>
+
+                <!-- Jenis Tindak Lanjut -->
+                <div class="form-group" style="margin-bottom:14px;">
+                  <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:7px;">
+                    Jenis Tindak Lanjut <span style="color:#ef4444;">*</span>
+                  </label>
+                  <div style="display:flex;flex-wrap:wrap;gap:8px;" id="jenis-wrap">
+                    <?php
+                    $jenis_opts = [
+                      'pembelian_baru'          => ['&#128722;','Pembelian Baru'],
+                      'perbaikan_eksternal'     => ['&#128295;','Perbaikan Vendor'],
+                      'penghapusan_aset'        => ['&#128465;','Hapus Aset'],
+                      'penggantian_suku_cadang' => ['&#128297;','Ganti Suku Cadang'],
+                      'lainnya'                 => ['&#128203;','Lainnya'],
+                    ];
+                    $cur_jenis = $ba['jenis_tindak'] ?? 'lainnya';
+                    foreach ($jenis_opts as $val => [$ico, $lbl]):
+                    ?>
+                    <label class="jenis-card <?= $cur_jenis===$val ? 'selected-'.$val : '' ?>"
+                           data-val="<?= $val ?>" id="jc-<?= $val ?>">
+                      <input type="radio" name="jenis_tindak" value="<?= $val ?>"
+                             <?= $cur_jenis===$val ? 'checked' : '' ?> required>
+                      <span style="font-size:16px;"><?= $ico ?></span>
+                      <span><?= $lbl ?></span>
+                    </label>
+                    <?php endforeach; ?>
+                  </div>
+                </div>
+
+                <!-- Uraian Masalah -->
+                <div class="form-group" style="margin-bottom:12px;">
+                  <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">
+                    Uraian Permasalahan <span style="color:#ef4444;">*</span>
+                  </label>
+                  <textarea name="uraian_masalah" class="form-control" rows="3" required
+                    placeholder="Jelaskan permasalahan secara teknis dan kronologisnya..."><?= clean($ba['uraian_masalah']??$t['deskripsi']??'') ?></textarea>
+                </div>
+
+                <!-- Kesimpulan -->
+                <div class="form-group" style="margin-bottom:12px;">
+                  <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">
+                    Kesimpulan &amp; Analisa Teknis <span style="color:#ef4444;">*</span>
+                  </label>
+                  <textarea name="kesimpulan" class="form-control" rows="3" required
+                    placeholder="Jelaskan mengapa tidak bisa ditangani secara internal (kerusakan, keterbatasan alat, dll)..."><?= clean($ba['kesimpulan']??$t['catatan_penolakan']??'') ?></textarea>
+                </div>
+
+                <!-- Tindak Lanjut -->
+                <div class="form-group" style="margin-bottom:12px;">
+                  <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">
+                    Detail Rekomendasi Tindak Lanjut <span style="color:#ef4444;">*</span>
+                  </label>
+                  <textarea name="tindak_lanjut" class="form-control" rows="3" required
+                    id="ta-tindak"
+                    placeholder="Contoh: Direkomendasikan pembelian laptop baru karena motherboard mengalami kerusakan permanen dan tidak ekonomis untuk diperbaiki..."><?= clean($ba['tindak_lanjut']??'') ?></textarea>
+                </div>
+
+                <!-- Estimasi -->
+                <div class="form-group" style="margin-bottom:14px;">
+                  <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">
+                    Estimasi Biaya <span style="color:#94a3b8;font-weight:400;">(opsional, Rupiah)</span>
+                  </label>
+                  <div style="position:relative;max-width:260px;">
+                    <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:12px;font-weight:700;">Rp</span>
+                    <input type="number" name="nilai_estimasi" class="form-control" min="0"
+                      value="<?= clean($ba['nilai_estimasi']??'') ?>"
+                      placeholder="Contoh: 8500000" style="padding-left:35px;">
+                  </div>
+                </div>
+
+                <!-- Tanda Tangan -->
+                <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:14px;">
+                  <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:12px;">
+                    <i class="fa fa-signature" style="color:#26B99A;"></i> Data Tanda Tangan
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div>
+                      <label style="font-size:10.5px;color:#64748b;font-weight:600;display:block;margin-bottom:3px;">Diketahui (Nama)</label>
+                      <input type="text" name="diketahui_nama" class="form-control"
+                        value="<?= clean($ba['diketahui_nama']??'') ?>" placeholder="Kepala Divisi IT">
+                    </div>
+                    <div>
+                      <label style="font-size:10.5px;color:#64748b;font-weight:600;display:block;margin-bottom:3px;">Jabatan</label>
+                      <input type="text" name="diketahui_jabatan" class="form-control"
+                        value="<?= clean($ba['diketahui_jabatan']??'') ?>" placeholder="Kepala IT">
+                    </div>
+                    <div>
+                      <label style="font-size:10.5px;color:#64748b;font-weight:600;display:block;margin-bottom:3px;">Menyetujui (Nama)</label>
+                      <input type="text" name="mengetahui_nama" class="form-control"
+                        value="<?= clean($ba['mengetahui_nama']??'') ?>" placeholder="Manajer / Pimpinan">
+                    </div>
+                    <div>
+                      <label style="font-size:10.5px;color:#64748b;font-weight:600;display:block;margin-bottom:3px;">Jabatan</label>
+                      <input type="text" name="mengetahui_jabatan" class="form-control"
+                        value="<?= clean($ba['mengetahui_jabatan']??'') ?>" placeholder="Manajer Operasional">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Catatan -->
+                <div class="form-group" style="margin-bottom:16px;">
+                  <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">
+                    Catatan Tambahan <span style="color:#94a3b8;font-weight:400;">(opsional)</span>
+                  </label>
+                  <textarea name="catatan_tambahan" class="form-control" rows="2"
+                    placeholder="Informasi lain yang perlu dicantumkan dalam berita acara..."><?= clean($ba['catatan_tambahan']??'') ?></textarea>
+                </div>
+
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                  <button type="submit" class="btn btn-primary">
+                    <i class="fa fa-save"></i> <?= $ba ? 'Perbarui Berita Acara' : 'Buat &amp; Simpan Berita Acara' ?>
+                  </button>
+                  <?php if ($ba): ?>
+                  <button type="button" class="btn btn-default"
+                    onclick="document.getElementById('form-ba').style.display='none';">Batal</button>
+                  <a href="<?= APP_URL ?>/pages/cetak_berita_acara.php?tiket_id=<?= $id ?>" target="_blank"
+                     class="btn btn-success" style="margin-left:auto;">
+                    <i class="fa fa-file-pdf"></i> Cetak / PDF
+                  </a>
+                  <?php endif; ?>
+                </div>
+              </form>
+            </div>
+          </div><!-- /t-ba -->
           <?php endif; ?>
 
         </div>
       </div>
     </div>
 
-    <!-- Kolom Kanan: SLA + Timeline -->
+    <!-- KOLOM KANAN -->
     <div>
       <?php if ($t['sla_jam']): ?>
       <div class="panel">
-        <div class="panel-hd"><h5><i class="fa fa-stopwatch text-primary"></i> &nbsp;SLA & Waktu</h5></div>
+        <div class="panel-hd"><h5><i class="fa fa-stopwatch text-primary"></i> &nbsp;SLA &amp; Waktu</h5></div>
         <div class="panel-bd">
           <?php
-          $info_sla = array(
-            array('Waktu Submit',  formatTanggal($t['waktu_submit'],true)),
-            array('Waktu Respon',  $t['waktu_diproses'] ? formatTanggal($t['waktu_diproses'],true) : '—'),
-            array('Waktu Selesai', $t['waktu_selesai']  ? formatTanggal($t['waktu_selesai'],true)  : '—'),
-            array('Durasi Respon', formatDurasi($dur_respon).' / target '.$t['sla_respon_jam'].'j'),
-            array('Durasi Total',  formatDurasi($dur_selesai).' / target '.$t['sla_jam'].'j'),
-          );
-          foreach ($info_sla as $row): $l=$row[0]; $v=$row[1]; ?>
+          $info_sla = [
+            ['Waktu Submit',  formatTanggal($t['waktu_submit'],true)],
+            ['Waktu Respon',  $t['waktu_diproses'] ? formatTanggal($t['waktu_diproses'],true) : '—'],
+            ['Waktu Selesai', $t['waktu_selesai']  ? formatTanggal($t['waktu_selesai'],true)  : '—'],
+            ['Durasi Respon', formatDurasi($dur_respon).' / target '.$t['sla_respon_jam'].'j'],
+            ['Durasi Total',  formatDurasi($dur_selesai).' / target '.$t['sla_jam'].'j'],
+          ];
+          foreach ($info_sla as [$l,$v]): ?>
           <div class="d-flex ai-c" style="justify-content:space-between;margin-bottom:8px;font-size:12px;">
             <span style="color:#888;"><?= $l ?></span>
             <strong style="color:#333;text-align:right;font-size:11px;"><?= $v ?></strong>
@@ -664,7 +1047,7 @@ include '../includes/header.php';
 
 <!-- LIGHTBOX -->
 <div id="lightbox" onclick="if(event.target===this)closeLightbox()">
-  <button id="lightbox-close" onclick="closeLightbox()" title="Tutup (Esc)">&times;</button>
+  <button id="lightbox-close" onclick="closeLightbox()" title="Tutup">&times;</button>
   <img id="lightbox-img" src="" alt="">
   <div id="lightbox-caption"></div>
   <div id="lightbox-nav">
@@ -704,15 +1087,39 @@ document.addEventListener('keydown', function(e) {
   if (e.key==='ArrowRight') lightboxNav(1);
 });
 
+/* ── Jenis Tindak Lanjut Cards ─────────────────────────── */
+var jenisClass = {
+  pembelian_baru:'selected-pembelian_baru', perbaikan_eksternal:'selected-perbaikan_eksternal',
+  penghapusan_aset:'selected-penghapusan_aset', penggantian_suku_cadang:'selected-penggantian_suku_cadang',
+  lainnya:'selected-lainnya'
+};
+var taPlaceholder = {
+  pembelian_baru:'Contoh: Direkomendasikan pembelian laptop Dell Latitude 5530, karena motherboard rusak permanen dan biaya perbaikan melebihi 70% harga unit baru.',
+  perbaikan_eksternal:'Contoh: Perlu dikirim ke service center resmi Epson karena kerusakan pada print head yang tidak dapat diperbaiki sendiri.',
+  penghapusan_aset:'Contoh: Aset sudah melewati umur ekonomis 5 tahun, kondisi rusak total. Direkomendasikan untuk dihapus dari daftar aset dan dimusnahkan/dilelang.',
+  penggantian_suku_cadang:'Contoh: Baterai laptop sudah tidak bisa menyimpan daya, perlu penggantian baterai original tipe XYZ.',
+  lainnya:'Tuliskan detail rekomendasi tindak lanjut...'
+};
+document.querySelectorAll('.jenis-card').forEach(function(card) {
+  card.addEventListener('click', function() {
+    var val = this.getAttribute('data-val');
+    document.querySelectorAll('.jenis-card').forEach(function(c) {
+      c.className = 'jenis-card';
+    });
+    this.className = 'jenis-card ' + (jenisClass[val]||'');
+    this.querySelector('input').checked = true;
+    var ta = document.getElementById('ta-tindak');
+    if (ta && !ta.value) ta.placeholder = taPlaceholder[val]||'';
+  });
+});
+
+/* ── Upload Foto ────────────────────────────────────────── */
 var selectedFiles = [], selectedFilesStatus = [];
 
-function previewFoto(input) {
-  selectedFiles = Array.from(input.files); renderPreview();
-}
+function previewFoto(input) { selectedFiles = Array.from(input.files); renderPreview(); }
 function renderPreview() {
   var grid=document.getElementById('preview-grid'), btn=document.getElementById('btn-upload-foto'), cnt=document.getElementById('foto-count');
-  if (!grid) return;
-  grid.innerHTML = '';
+  if (!grid) return; grid.innerHTML='';
   if (btn) btn.style.display = selectedFiles.length ? 'inline-flex' : 'none';
   if (cnt) cnt.textContent = selectedFiles.length;
   selectedFiles.forEach(function(f,i) {
@@ -729,14 +1136,9 @@ function syncInputFiles() {
   selectedFiles.forEach(function(f){dt.items.add(f);});
   document.getElementById('input-foto').files=dt.files;
 }
-
-function previewFotoStatus(input) {
-  selectedFilesStatus = Array.from(input.files); renderPreviewStatus();
-}
+function previewFotoStatus(input) { selectedFilesStatus=Array.from(input.files); renderPreviewStatus(); }
 function renderPreviewStatus() {
-  var grid=document.getElementById('preview-grid-status');
-  if (!grid) return;
-  grid.innerHTML='';
+  var grid=document.getElementById('preview-grid-status'); if (!grid) return; grid.innerHTML='';
   selectedFilesStatus.forEach(function(f,i) {
     var wrap=document.createElement('div'); wrap.className='prev-thumb'; wrap.style.marginTop='8px';
     var img=document.createElement('img'), del=document.createElement('button');
@@ -749,19 +1151,12 @@ function renderPreviewStatus() {
 function syncInputFilesStatus() {
   var dt=new DataTransfer();
   selectedFilesStatus.forEach(function(f){dt.items.add(f);});
-  var inp=document.getElementById('input-foto-status');
-  if (inp) inp.files=dt.files;
+  var inp=document.getElementById('input-foto-status'); if (inp) inp.files=dt.files;
 }
-
 function setupDrop(zoneId, inputId, isStatus) {
-  var zone=document.getElementById(zoneId);
-  if (!zone) return;
-  ['dragenter','dragover'].forEach(function(ev){
-    zone.addEventListener(ev,function(e){e.preventDefault();zone.classList.add('drag-over');});
-  });
-  ['dragleave','drop'].forEach(function(ev){
-    zone.addEventListener(ev,function(){zone.classList.remove('drag-over');});
-  });
+  var zone=document.getElementById(zoneId); if (!zone) return;
+  ['dragenter','dragover'].forEach(function(ev){zone.addEventListener(ev,function(e){e.preventDefault();zone.classList.add('drag-over');});});
+  ['dragleave','drop'].forEach(function(ev){zone.addEventListener(ev,function(){zone.classList.remove('drag-over');});});
   zone.addEventListener('drop',function(e){
     e.preventDefault();
     var inp=document.getElementById(inputId); if (!inp) return;
@@ -775,6 +1170,7 @@ function setupDrop(zoneId, inputId, isStatus) {
 setupDrop('drop-zone','input-foto',false);
 setupDrop('drop-zone-status','input-foto-status',true);
 
+/* ── Note required on status change ────────────────────── */
 document.querySelectorAll('[name=status_baru]').forEach(function(r){
   r.addEventListener('change',function(){
     var req=document.getElementById('req-note');
@@ -788,9 +1184,35 @@ document.querySelectorAll('[name=status_baru]').forEach(function(r){
   });
 });
 
-if (window.location.hash==='#t-aksi'){
-  var btn=document.getElementById('btn-tab-aksi');
-  if (btn) btn.click();
+/* ── Auto-open tab + reminder BA ───────────────────────── */
+var hash = window.location.hash;
+if (hash === '#t-ba') {
+  var b = document.getElementById('btn-tab-ba'); if (b) b.click();
+} else if (hash === '#t-aksi') {
+  var b2 = document.getElementById('btn-tab-aksi'); if (b2) b2.click();
 }
+
+<?php if ($t['status']==='tidak_bisa' && !$ba && hasRole(array('admin','teknisi'))): ?>
+// Tampilkan popup reminder jika BA belum dibuat
+window.addEventListener('load', function() {
+  setTimeout(function() {
+    var toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;bottom:24px;right:20px;z-index:9999;'
+      + 'background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;'
+      + 'padding:14px 18px;border-radius:10px;font-size:13px;font-weight:700;'
+      + 'box-shadow:0 8px 24px rgba(220,38,38,.4);max-width:300px;cursor:pointer;'
+      + 'animation:slideUp .4s ease;';
+    toast.innerHTML = '<div style="margin-bottom:4px;">&#9888;&#65039; Berita Acara Belum Dibuat!</div>'
+      + '<div style="font-size:11px;font-weight:400;opacity:.85;">Klik untuk buka form Berita Acara.</div>';
+    toast.onclick = function() {
+      var btn = document.getElementById('btn-tab-ba');
+      if (btn) btn.click();
+      toast.remove();
+    };
+    document.body.appendChild(toast);
+    setTimeout(function() { if (toast.parentNode) toast.remove(); }, 10000);
+  }, 1000);
+});
+<?php endif; ?>
 </script>
 <?php include '../includes/footer.php'; ?>

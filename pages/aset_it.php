@@ -619,7 +619,7 @@ tr.row-dipinjam td:first-child {
                                 : ($a['lokasi'] ?? ''),
                 'pj'      => $a['pj_nama_db'] ?: ($a['penanggung_jawab'] ?? ''),
                 'kondisi' => $a['kondisi'] ?? 'Baik',
-                'url'     => APP_URL.'/pages/aset_it.php?detail='.$a['id'],
+                'url'     => APP_URL.'/aset_detail_publik.php?id='.$a['id'],
             ]), ENT_QUOTES, 'UTF-8');
           ?>
           <tr class="<?= $row_class ?>">
@@ -1082,8 +1082,8 @@ function previewLabel(btn) {
     // Kategori tag
     document.getElementById('lp-kat').textContent = d.kategori || '—';
 
-    document.getElementById('lp-qr-img').src =
-        'https://chart.googleapis.com/chart?chs=140x140&cht=qr&choe=UTF-8&chld=M|2&chl='
+  document.getElementById('lp-qr-img').src =
+        'https://api.qrserver.com/v1/create-qr-code/?size=140x140&ecc=M&data='
         + encodeURIComponent(d.url);
 
     // No. Inventaris

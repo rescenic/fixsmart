@@ -517,6 +517,12 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       ")->fetchColumn(); } catch(Exception $e) {}
   }
 
+  // Hitung BA belum selesai (untuk badge)
+  $cnt_ba = 0;
+  if (in_array($_cur_role, ['teknisi', 'admin'])) {
+      try { $cnt_ba = (int)$pdo->query("SELECT COUNT(*) FROM berita_acara")->fetchColumn(); } catch(Exception $e) {}
+  }
+
   // Active group detection
   $grp_tiket_it    = in_array($active_menu??'', ['antrian','semua_tiket','sla']);
   $grp_tiket_ipsrs = in_array($active_menu??'', ['antrian_ipsrs','semua_tiket_ipsrs','sla_ipsrs']);
@@ -590,6 +596,14 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
         </div>
       </div>
     </details>
+
+    <!-- Berita Acara — Teknisi -->
+    <div class="nav-item <?= ($active_menu??'')==='berita_acara'?'active':'' ?>">
+      <a href="<?= APP_URL ?>/pages/berita_acara.php">
+        <i class="fa fa-file-contract ni"></i>
+        <span class="nl">Berita Acara</span>
+      </a>
+    </div>
 
     <details class="nav-group" <?= $grp_aset_it ? 'open' : '' ?>>
       <summary class="nav-group-hd">
@@ -711,6 +725,14 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
         </div>
       </div>
     </details>
+
+    <!-- Berita Acara — Admin -->
+    <div class="nav-item <?= ($active_menu??'')==='berita_acara'?'active':'' ?>">
+      <a href="<?= APP_URL ?>/pages/berita_acara.php">
+        <i class="fa fa-file-contract ni"></i>
+        <span class="nl">Berita Acara</span>
+      </a>
+    </div>
 
     <details class="nav-group" <?= $grp_aset_it ? 'open' : '' ?>>
       <summary class="nav-group-hd">
@@ -877,12 +899,12 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
 
 
 <!-- ════════════════════════════════════════
-     MODAL TENTANG — updated with teal theme
+     MODAL TENTANG
 ════════════════════════════════════════ -->
 <div class="modal-ov" id="m-about">
   <div style="background:#fff;width:100%;max-width:760px;border-radius:16px;box-shadow:0 24px 64px rgba(0,0,0,.22);overflow:hidden;display:flex;animation:mIn .22s cubic-bezier(.4,0,.2,1);max-height:90vh;">
 
-    <!-- Kiri — dark panel sama nuansa login -->
+    <!-- Kiri — dark panel -->
     <div style="width:250px;flex-shrink:0;background:linear-gradient(170deg,#0a0f14 0%,#0d1520 55%,#0a1a12 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 18px;text-align:center;border-right:1px solid #1e2f42;">
       <div style="width:58px;height:58px;background:rgba(0,229,176,0.10);border:1.5px solid rgba(0,229,176,0.28);border-radius:14px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;box-shadow:0 0 24px rgba(0,229,176,0.15);">
         <i class="fa fa-desktop" style="font-size:26px;color:#00e5b0;"></i>
@@ -934,9 +956,9 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
           <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;">
             <i class="fa fa-heart" style="color:#ff4d6d;font-size:13px;"></i>
             <span style="font-size:12px;font-weight:700;color:#92400e;">Dukung Pengembangan</span>
-            <span style="font-size:10px;color:#a16207;margin-left:auto;">Sukarela ☕</span>
+            <span style="font-size:10px;color:#a16207;margin-left:auto;">Sukarela</span>
           </div>
-          <?php foreach ([['#6c3db5','fa fa-wallet','OVO / DANA','0821 7784 6209','0821 7784 6209'],['#00703c','','Bank BSI','7134197557','7134197557']] as [$bg,$ic,$lbl,$display,$copy]): ?>
+          <?php foreach ([['#6c3db5','fa fa-wallet','GOPAY / DANA','0821 7784 6209','0821 7784 6209'],['#00703c','','Bank BSI','7134197557','7134197557']] as [$bg,$ic,$lbl,$display,$copy]): ?>
           <div style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #fde68a;border-radius:6px;padding:7px 9px;margin-bottom:6px;">
             <div style="width:24px;height:24px;border-radius:5px;background:<?= $bg ?>;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
               <?php if ($ic): ?><i class="<?= $ic ?>" style="color:#fff;font-size:10px;"></i>
