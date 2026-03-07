@@ -15,9 +15,6 @@ $_css_url  = APP_URL . '/assets/css/style.css';
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <link href="<?= $_css_url ?>" rel="stylesheet">
 <style>
-/* ═══════════════════════════════════════════════════════
-   FIXSMART — COLOR SYSTEM (selaras dengan login/register)
-═══════════════════════════════════════════════════════ */
 :root {
   /* Layout */
   --sb-width: 220px;
@@ -529,7 +526,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   $grp_aset_it     = in_array($active_menu??'', ['aset_it','maintenance_it','cek_koneksi','server_room']);
   $grp_aset_ipsrs  = in_array($active_menu??'', ['aset_ipsrs','maintenance_ipsrs']);
   $grp_master      = in_array($active_menu??'', ['kategori','kategori_ipsrs','bagian','users','login_log']);
-  $grp_setting     = in_array($active_menu??'', ['setting_telegram']);
+  $grp_setting     = in_array($active_menu??'', ['setting_telegram','backup']); // ← tambah 'backup'
   $grp_tiket_saya  = in_array($active_menu??'', ['buat_tiket','tiket_saya']);
   $grp_tiket_saya_ipsrs = in_array($active_menu??'', ['buat_tiket_sarpras','tiket_saya_ipsrs']);
   ?>
@@ -802,15 +799,19 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </div>
     </details>
 
+    <!-- ══ PENGATURAN (hanya Admin) ══ -->
     <details class="nav-group" <?= $grp_setting ? 'open' : '' ?>>
       <summary class="nav-group-hd">
         <i class="fa fa-cog ni-grp"></i><span>Pengaturan</span>
         <i class="fa fa-chevron-down caret-grp"></i>
       </summary>
       <div class="nav-group-bd">
+
+        <!-- Notifikasi Telegram -->
         <div class="nav-item <?= ($active_menu??'')==='setting_telegram'?'active':'' ?>">
           <a href="<?= APP_URL ?>/pages/setting_telegram.php">
-            <i class="fa fa-paper-plane ni" style="color:#0088cc;"></i><span class="nl">Notif Telegram</span>
+            <i class="fa fa-paper-plane ni" style="color:#0088cc;"></i>
+            <span class="nl">Notif Telegram</span>
             <?php try {
               $tg_on = $pdo->query("SELECT value FROM settings WHERE `key`='telegram_enabled'")->fetchColumn();
               echo $tg_on=='1'
@@ -819,6 +820,23 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
             } catch(Exception $e) {} ?>
           </a>
         </div>
+
+        <!-- Backup Database — hanya Admin -->
+        <div class="nav-item <?= ($active_menu??'')==='backup'?'active':'' ?>">
+          <a href="<?= APP_URL ?>/pages/backup.php">
+            <i class="fa fa-database ni" style="color:#26B99A;"></i>
+            <span class="nl">Backup Database</span>
+            <?php
+            // Tampilkan dot hijau jika auto backup aktif
+            try {
+              $bk_on = $pdo->query("SELECT value FROM settings WHERE `key`='backup_auto_enabled'")->fetchColumn();
+              echo $bk_on=='1'
+                ? '<span style="width:7px;height:7px;border-radius:50%;background:#26B99A;display:inline-block;flex-shrink:0;box-shadow:0 0 6px #26B99A;" title="Auto Backup Aktif"></span>'
+                : '<span style="width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.15);display:inline-block;flex-shrink:0;" title="Auto Backup Nonaktif"></span>';
+            } catch(Exception $e) {} ?>
+          </a>
+        </div>
+
       </div>
     </details>
 
@@ -1108,7 +1126,4 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<!-- ════════════════════════════════════════
-     MAIN WRAPPER START
-════════════════════════════════════════ -->
 <div class="main" id="main">
