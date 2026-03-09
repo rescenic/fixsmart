@@ -7,7 +7,7 @@ $page_title  = 'Monitor Koneksi';
 $active_menu = 'cek_koneksi';
 
 // ══════════════════════════════════════════════════
-//  FUNGSI PING — cepat, tanpa exec
+//  FUNGSI PING — TCP fsockopen (untuk tipe IP)
 // ══════════════════════════════════════════════════
 function pingIP(string $host, int $port = 80, int $timeout = 3): array {
     $clean = preg_replace('#^https?://#', '', $host);
@@ -25,40 +25,62 @@ function pingIP(string $host, int $port = 80, int $timeout = 3): array {
     return ['status' => 'offline', 'ping_ms' => null, 'http_code' => null, 'pesan' => $errstr ?: 'Unreachable'];
 }
 
-function pingURL(string $url, int $timeout = 3): array {
+// ══════════════════════════════════════════════════
+//  FUNGSI PING URL — cURL satu per satu (akurat)
+//  Mengukur TTFB (Time to First Byte) bukan total
+// ══════════════════════════════════════════════════
+function pingURL(string $url, int $timeout = 5): array {
     if (!preg_match('#^https?://#', $url)) $url = 'http://' . $url;
-    $start = microtime(true);
-    $ch    = curl_init($url);
+
+    $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT        => $timeout,
         CURLOPT_CONNECTTIMEOUT => $timeout,
         CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS      => 2,
-        CURLOPT_USERAGENT      => 'MediFix-Monitor/1.0',
+        CURLOPT_MAXREDIRS      => 3,
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; MediFix-Monitor/1.0)',
         CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_NOBODY         => true,
-        CURLOPT_FRESH_CONNECT  => true,
+        CURLOPT_SSL_VERIFYHOST => false,
+        CURLOPT_NOBODY         => true,   // HEAD request — lebih ringan
+        CURLOPT_FRESH_CONNECT  => true,   // jangan pakai connection cache
+        CURLOPT_FORBID_REUSE   => true,
     ]);
+
     curl_exec($ch);
-    $code  = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $errNo = curl_errno($ch);
-    $errStr= curl_error($ch);
+
+    $code       = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $errNo      = curl_errno($ch);
+    $errStr     = curl_error($ch);
+    // Ambil TTFB (connect + namelookup + TTFB) — lebih representatif dari total download
+    $connectMs  = round(curl_getinfo($ch, CURLINFO_CONNECT_TIME)       * 1000, 1);
+    $ttfbMs     = round(curl_getinfo($ch, CURLINFO_STARTTRANSFER_TIME)  * 1000, 1);
+    $totalMs    = round(curl_getinfo($ch, CURLINFO_TOTAL_TIME)          * 1000, 1);
     curl_close($ch);
-    $ms = round((microtime(true) - $start) * 1000, 1);
+
+    // Gunakan TTFB jika tersedia, fallback ke total
+    $ms = $ttfbMs > 0 ? $ttfbMs : $totalMs;
 
     if ($errNo === CURLE_OPERATION_TIMEDOUT) {
         return ['status' => 'timeout', 'ping_ms' => null, 'http_code' => 0, 'pesan' => 'Timeout'];
     }
     if ($errNo) {
-        return ['status' => 'offline', 'ping_ms' => $ms, 'http_code' => 0, 'pesan' => $errStr];
+        return ['status' => 'offline', 'ping_ms' => null, 'http_code' => 0, 'pesan' => $errStr];
     }
-    $ok = ($code >= 200 && $code < 400);
-    return ['status' => $ok ? 'online' : 'offline', 'ping_ms' => $ms, 'http_code' => $code, 'pesan' => "HTTP $code"];
+
+    // HTTP 2xx dan 3xx = online, 4xx/5xx = offline (server ada tapi error)
+    if ($code >= 200 && $code < 400) {
+        return ['status' => 'online',  'ping_ms' => $ms, 'http_code' => $code, 'pesan' => "HTTP $code · TTFB {$ms}ms"];
+    }
+    if ($code >= 400) {
+        return ['status' => 'offline', 'ping_ms' => $ms, 'http_code' => $code, 'pesan' => "HTTP $code"];
+    }
+
+    return ['status' => 'offline', 'ping_ms' => null, 'http_code' => $code, 'pesan' => "HTTP $code"];
 }
 
 // ══════════════════════════════════════════════════
-//  AJAX — CEK SATU HOST
+//  AJAX — CEK SATU HOST (real-time, akurat)
 // ══════════════════════════════════════════════════
 if (isset($_GET['ajax_cek'])) {
     header('Content-Type: application/json');
@@ -69,8 +91,8 @@ if (isset($_GET['ajax_cek'])) {
     if (!$row) { echo json_encode(['error' => 'Not found']); exit; }
 
     $hasil = ($row['tipe'] === 'url')
-        ? pingURL($row['host'], $row['timeout_detik'])
-        : pingIP($row['host'], $row['port'] ?: 80, $row['timeout_detik']);
+        ? pingURL($row['host'], (int)$row['timeout_detik'])
+        : pingIP($row['host'], (int)($row['port'] ?: 80), (int)$row['timeout_detik']);
 
     $pdo->prepare("INSERT INTO koneksi_log (monitor_id,status,ping_ms,http_code,pesan,cek_at) VALUES (?,?,?,?,?,NOW())")
         ->execute([$id, $hasil['status'], $hasil['ping_ms'] ?? null, $hasil['http_code'] ?? null, $hasil['pesan'] ?? null]);
@@ -80,11 +102,13 @@ if (isset($_GET['ajax_cek'])) {
 }
 
 // ══════════════════════════════════════════════════
-//  AJAX — CEK SEMUA HOST — PARALEL via multi-curl
+//  AJAX — CEK SEMUA HOST
+//  URL: parallel multi-curl dengan timing per-handle
+//  IP : fsockopen sequential (sudah cepat)
 // ══════════════════════════════════════════════════
 if (isset($_GET['ajax_cek_semua'])) {
     header('Content-Type: application/json');
-    set_time_limit(30);
+    set_time_limit(60);
 
     $rows    = $pdo->query("SELECT * FROM koneksi_monitor WHERE aktif=1 ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
     if (empty($rows)) { echo json_encode([]); exit; }
@@ -93,69 +117,79 @@ if (isset($_GET['ajax_cek_semua'])) {
     $ipRows  = array_filter($rows, fn($r) => $r['tipe'] === 'ip');
     $results = [];
 
-    // URL: parallel multi-curl
+    // ── URL: parallel multi-curl, timing TTFB per handle ──
     if (!empty($urlRows)) {
-        $mh = curl_multi_init();
+        $mh      = curl_multi_init();
+        curl_multi_setopt($mh, CURLMOPT_MAX_TOTAL_CONNECTIONS, 10);
         $handles = [];
+
         foreach ($urlRows as $row) {
             $url = $row['host'];
             if (!preg_match('#^https?://#', $url)) $url = 'http://' . $url;
-            $to  = min($row['timeout_detik'], 5);
-            $ch  = curl_init($url);
+            $to  = min((int)$row['timeout_detik'], 8);
+
+            $ch = curl_init($url);
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_TIMEOUT        => $to,
                 CURLOPT_CONNECTTIMEOUT => $to,
                 CURLOPT_FOLLOWLOCATION => true,
-                CURLOPT_MAXREDIRS      => 2,
-                CURLOPT_USERAGENT      => 'MediFix-Monitor/1.0',
+                CURLOPT_MAXREDIRS      => 3,
+                CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; MediFix-Monitor/1.0)',
                 CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => false,
                 CURLOPT_NOBODY         => true,
                 CURLOPT_FRESH_CONNECT  => true,
+                CURLOPT_FORBID_REUSE   => true,
             ]);
             curl_multi_add_handle($mh, $ch);
-            $handles[$row['id']] = ['ch' => $ch, 'start' => microtime(true), 'row' => $row];
+            $handles[$row['id']] = ['ch' => $ch, 'row' => $row];
         }
+
         $running = null;
         do {
             curl_multi_exec($mh, $running);
-            curl_multi_select($mh, 0.1);
+            curl_multi_select($mh, 0.05);
         } while ($running > 0);
 
         foreach ($handles as $id => $h) {
-            $ch    = $h['ch'];
-            $ms    = round((microtime(true) - $h['start']) * 1000, 1);
-            $code  = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $errNo = curl_errno($ch);
-            $errStr= curl_error($ch);
+            $ch     = $h['ch'];
+            $code   = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $errNo  = curl_errno($ch);
+            $errStr = curl_error($ch);
+            $ttfbMs = round(curl_getinfo($ch, CURLINFO_STARTTRANSFER_TIME) * 1000, 1);
+            $totMs  = round(curl_getinfo($ch, CURLINFO_TOTAL_TIME)         * 1000, 1);
+            $ms     = $ttfbMs > 0 ? $ttfbMs : $totMs;
             curl_multi_remove_handle($mh, $ch);
             curl_close($ch);
 
             if ($errNo === CURLE_OPERATION_TIMEDOUT) {
                 $r = ['status' => 'timeout', 'ping_ms' => null, 'http_code' => 0, 'pesan' => 'Timeout'];
             } elseif ($errNo) {
-                $r = ['status' => 'offline', 'ping_ms' => $ms, 'http_code' => 0, 'pesan' => $errStr];
+                $r = ['status' => 'offline', 'ping_ms' => null, 'http_code' => 0, 'pesan' => $errStr];
+            } elseif ($code >= 200 && $code < 400) {
+                $r = ['status' => 'online',  'ping_ms' => $ms, 'http_code' => $code, 'pesan' => "HTTP $code · TTFB {$ms}ms"];
             } else {
-                $ok = ($code >= 200 && $code < 400);
-                $r  = ['status' => $ok ? 'online' : 'offline', 'ping_ms' => $ms, 'http_code' => $code, 'pesan' => "HTTP $code"];
+                $r = ['status' => 'offline', 'ping_ms' => $ms, 'http_code' => $code, 'pesan' => "HTTP $code"];
             }
             $results[$id] = array_merge($r, ['id' => $id]);
         }
         curl_multi_close($mh);
     }
 
-    // IP: fsockopen (tidak butuh exec)
+    // ── IP: fsockopen, timing per koneksi ──
     foreach ($ipRows as $row) {
         $clean = preg_replace('#^https?://#', '', $row['host']);
         $clean = explode('/', $clean)[0];
-        $port  = $row['port'] ?: 80;
-        $to    = min($row['timeout_detik'], 5);
+        $port  = (int)($row['port'] ?: 80);
+        $to    = min((int)$row['timeout_detik'], 8);
         $start = microtime(true);
         $fp    = @fsockopen($clean, $port, $errno, $errstr, $to);
         $ms    = round((microtime(true) - $start) * 1000, 1);
+
         if ($fp) {
             fclose($fp);
-            $r = ['status' => 'online', 'ping_ms' => $ms, 'http_code' => null, 'pesan' => 'TCP OK'];
+            $r = ['status' => 'online',  'ping_ms' => $ms, 'http_code' => null, 'pesan' => "TCP OK · {$ms}ms"];
         } elseif ($ms >= $to * 1000 - 50) {
             $r = ['status' => 'timeout', 'ping_ms' => null, 'http_code' => null, 'pesan' => 'Timeout'];
         } else {
@@ -230,7 +264,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ══════════════════════════════════════════════════
-//  DATA UTAMA — dari DB saja, TIDAK ping saat load
+//  DATA UTAMA — dari DB, tidak ping saat load
 // ══════════════════════════════════════════════════
 try {
     $monitors = $pdo->query("
@@ -238,7 +272,8 @@ try {
                l.status    AS last_status,
                l.ping_ms   AS last_ping,
                l.cek_at    AS last_cek,
-               l.http_code AS last_http
+               l.http_code AS last_http,
+               l.pesan     AS last_pesan
         FROM koneksi_monitor m
         LEFT JOIN koneksi_log l ON l.id = (
             SELECT id FROM koneksi_log WHERE monitor_id = m.id ORDER BY cek_at DESC LIMIT 1
@@ -260,6 +295,38 @@ try {
     $monitors = []; $grouped = []; $total = $online = $offline = $timeout = $belum = 0;
     $kategori_list = [];
     $setup_error = $e->getMessage();
+}
+
+// ── Helper: hitung kelas & persentase bar ──────────
+// Threshold realistis:
+//   IP/LAN  : < 10ms great, < 50ms good, < 150ms ok, >= 150ms slow
+//   URL publik: < 200ms great, < 500ms good, < 1500ms ok, >= 1500ms slow
+// Bar = representasi "kecepatan" → makin cepat = bar makin panjang & hijau
+function latencyClass(float $ms, string $tipe): string {
+    if ($tipe === 'ip') {
+        if ($ms < 10)  return 'great';
+        if ($ms < 50)  return 'good';
+        if ($ms < 150) return 'medium';
+        return 'bad';
+    }
+    // url
+    if ($ms < 200)  return 'great';
+    if ($ms < 500)  return 'good';
+    if ($ms < 1500) return 'medium';
+    return 'bad';
+}
+
+function latencyPct(float $ms, string $tipe): int {
+    // Konversi latency ke "skor kecepatan" 0-100
+    // Makin kecil ms → skor makin tinggi → bar makin panjang & hijau
+    if ($tipe === 'ip') {
+        // Skala 0-300ms untuk IP
+        $pct = max(0, 100 - ($ms / 300) * 100);
+    } else {
+        // Skala 0-3000ms untuk URL publik
+        $pct = max(0, 100 - ($ms / 3000) * 100);
+    }
+    return (int)min(100, max(5, $pct));
 }
 
 include '../includes/header.php';
@@ -314,19 +381,25 @@ include '../includes/header.php';
 .meter-label    { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
 .meter-lbl-l    { font-size:10px; color:#94a3b8; font-weight:600; }
 .meter-ping-v   { font-size:14px; font-weight:800; }
-.meter-ping-v.good    { color:var(--online);  }
+.meter-ping-v.great   { color:#10b981; }
+.meter-ping-v.good    { color:#34d399; }
 .meter-ping-v.medium  { color:var(--timeout); }
 .meter-ping-v.bad     { color:var(--offline); }
 .meter-ping-v.unknown { color:var(--unknown); }
 .meter-bar  { height:7px; border-radius:4px; background:#f1f5f9; overflow:hidden; }
+/* Bar dari KIRI = cepat/hijau. Panjang bar = skor kecepatan */
 .meter-fill { height:100%; border-radius:4px; width:0; transition:width .8s cubic-bezier(.4,0,.2,1), background .3s; }
+.meter-fill.great  { background:linear-gradient(90deg,#6ee7b7,#10b981); }
 .meter-fill.good   { background:linear-gradient(90deg,#34d399,#10b981); }
 .meter-fill.medium { background:linear-gradient(90deg,#fcd34d,#f59e0b); }
 .meter-fill.bad    { background:linear-gradient(90deg,#f87171,#ef4444); }
 
+.meter-scale { display:flex; justify-content:space-between; font-size:9px; color:#cbd5e1; margin-top:2px; }
+
 .mon-card-foot    { padding:7px 13px 10px 18px; border-top:1px solid #f3f4f6; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:5px; }
 .mon-foot-meta    { font-size:10px; color:#cbd5e1; }
 .mon-foot-meta span { color:#94a3b8; font-weight:600; }
+.mon-foot-pesan   { font-size:9px; color:#b0bec5; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:130px; }
 .mon-card-actions { display:flex; gap:4px; }
 .btn-mon { padding:3px 8px; border-radius:5px; font-size:10px; font-weight:700; border:1px solid; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; gap:3px; transition:all .15s; white-space:nowrap; }
 .btn-mon-cek:hover  { background:#26B99A; color:#fff; } .btn-mon-cek  { background:#f0fdf9; color:#26B99A; border-color:#26B99A; }
@@ -427,22 +500,38 @@ include '../includes/header.php';
   <div class="mon-grid">
     <?php foreach ($items as $mon):
       $ls  = $mon['last_status'] ?? null;
-      $lp  = $mon['last_ping']   ?? null;
+      $lp  = $mon['last_ping']   !== null ? (float)$mon['last_ping'] : null;
       $lc  = $mon['last_cek']    ?? null;
+      $tip = $mon['tipe']        ?? 'url';
 
+      // Hitung kelas & persentase bar berdasarkan tipe (IP vs URL)
       $pc  = 'unknown'; $pct = 0;
       if ($ls === 'online' && $lp !== null) {
-          if     ($lp < 50)  { $pc = 'good';   $pct = max(5, 100 - ($lp/50)*40); }
-          elseif ($lp < 200) { $pc = 'medium'; $pct = max(5, 60  - (($lp-50)/150)*30); }
-          else               { $pc = 'bad';    $pct = max(5, 30  - min(25,($lp-200)/50)); }
-      } elseif ($ls === 'offline') { $pc = 'bad';    $pct = 100; }
-      elseif ($ls === 'timeout')   { $pc = 'medium'; $pct = 50; }
+          $pc  = latencyClass($lp, $tip);
+          $pct = latencyPct($lp, $tip);
+      } elseif ($ls === 'offline') {
+          $pc = 'bad'; $pct = 0;   // bar kosong = tidak ada koneksi
+      } elseif ($ls === 'timeout') {
+          $pc = 'medium'; $pct = 5; // bar tipis = timeout
+      }
 
-      $gc         = $ls==='online' ? '#10b981' : ($ls==='timeout' ? '#f59e0b' : ($ls==='offline' ? '#ef4444' : '#e2e8f0'));
-      $dashOffset = round(141.3 * (1 - $pct/100), 1);
-      $gaugeText  = $ls==='online' && $lp!==null ? round($lp).'ms' : ($ls==='offline' ? 'DOWN' : ($ls==='timeout' ? 'T.O.' : '—'));
+      $gc = $ls==='online'
+            ? ($pc==='great' ? '#10b981' : ($pc==='good' ? '#34d399' : ($pc==='medium' ? '#f59e0b' : '#ef4444')))
+            : ($ls==='timeout' ? '#f59e0b' : ($ls==='offline' ? '#ef4444' : '#e2e8f0'));
+
+      // Gauge arc: pct = skor kecepatan, dashOffset makin kecil = arc makin panjang
+      $dashOffset = round(141.3 * (1 - $pct / 100), 1);
+
+      $gaugeText = $ls==='online' && $lp!==null
+          ? ($lp >= 1000 ? round($lp/1000,1).'s' : round($lp).'ms')
+          : ($ls==='offline' ? 'DOWN' : ($ls==='timeout' ? 'T.O.' : '—'));
+
+      // Label ms yang ditampilkan di kartu
+      $pingLabel = $ls==='online' && $lp!==null
+          ? ($lp >= 1000 ? round($lp/1000,2).' s' : round($lp).' ms')
+          : ($ls ? strtoupper($ls) : '—');
     ?>
-    <div class="mon-card" id="card-<?= $mon['id'] ?>" data-status="<?= $ls ?? '' ?>">
+    <div class="mon-card" id="card-<?= $mon['id'] ?>" data-status="<?= $ls ?? '' ?>" data-tipe="<?= $tip ?>">
       <div class="mon-card-loading" id="loading-<?= $mon['id'] ?>"><div class="spin-ring"></div></div>
 
       <div class="mon-card-head">
@@ -467,6 +556,7 @@ include '../includes/header.php';
         </div>
       </div>
 
+      <!-- Gauge speedometer -->
       <div class="gauge-wrap">
         <svg class="gauge-svg" viewBox="0 0 110 60" id="gauge-<?= $mon['id'] ?>" style="overflow:visible;">
           <path d="M10,55 A45,45 0 0,1 100,55" fill="none" stroke="#f1f5f9" stroke-width="9" stroke-linecap="round"/>
@@ -478,25 +568,31 @@ include '../includes/header.php';
         </svg>
       </div>
 
+      <!-- Bar latency -->
       <div class="mon-meter-wrap">
         <div class="meter-label">
-          <span class="meter-lbl-l">Latency</span>
-          <span class="meter-ping-v <?= $pc ?>" id="ping-val-<?= $mon['id'] ?>">
-            <?= $ls==='online' && $lp!==null ? round($lp).' ms' : ($ls ? strtoupper($ls) : '—') ?>
-          </span>
+          <span class="meter-lbl-l">Latency <?= $tip==='ip' ? '(TCP)' : '(TTFB)' ?></span>
+          <span class="meter-ping-v <?= $pc ?>" id="ping-val-<?= $mon['id'] ?>"><?= $pingLabel ?></span>
         </div>
         <div class="meter-bar">
           <div class="meter-fill <?= $pc ?>" id="meter-<?= $mon['id'] ?>" style="width:<?= $pct ?>%;"></div>
         </div>
-        <div style="display:flex;justify-content:space-between;font-size:9px;color:#e2e8f0;margin-top:2px;">
+        <div class="meter-scale">
           <span>Cepat</span><span>Sedang</span><span>Lambat</span>
         </div>
       </div>
 
       <div class="mon-card-foot">
-        <div class="mon-foot-meta">
-          <?php if ($lc): ?>Cek: <span><?= date('H:i d/m', strtotime($lc)) ?></span>
-          <?php else: ?><span>Belum pernah dicek</span><?php endif; ?>
+        <div>
+          <div class="mon-foot-meta">
+            <?php if ($lc): ?>Cek: <span><?= date('H:i d/m', strtotime($lc)) ?></span>
+            <?php else: ?><span>Belum pernah dicek</span><?php endif; ?>
+          </div>
+          <?php if ($mon['last_pesan'] ?? null): ?>
+          <div class="mon-foot-pesan" title="<?= htmlspecialchars($mon['last_pesan']) ?>">
+            <?= htmlspecialchars($mon['last_pesan']) ?>
+          </div>
+          <?php endif; ?>
         </div>
         <div class="mon-card-actions">
           <button class="btn-mon btn-mon-log"  onclick="lihatLog(<?= $mon['id'] ?>,'<?= htmlspecialchars(addslashes($mon['nama'])) ?>')" title="Log"><i class="fa fa-clock-rotate-left"></i></button>
@@ -565,7 +661,7 @@ include '../includes/header.php';
         <div class="f-grid-2" style="margin-top:12px;">
           <div>
             <label class="f-label">Timeout (maks 10 detik)</label>
-            <input type="number" name="timeout_detik" id="fm-mon-timeout" class="f-inp" value="3" min="1" max="10">
+            <input type="number" name="timeout_detik" id="fm-mon-timeout" class="f-inp" value="5" min="1" max="10">
           </div>
           <div style="display:flex;align-items:flex-end;padding-bottom:2px;">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;font-weight:600;color:#374151;">
@@ -627,58 +723,90 @@ const APP_URL = '<?= APP_URL ?>';
 
 function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-function pingClass(ms){
-    if (ms==null) return 'unknown';
-    if (ms<50)    return 'good';
-    if (ms<200)   return 'medium';
+// ── Threshold realistis ─────────────────────────────────────
+// IP/LAN  : < 10ms great, < 50ms good, < 150ms medium, ≥150ms bad
+// URL pub : < 200ms great, < 500ms good, < 1500ms medium, ≥1500ms bad
+function pingClass(ms, tipe) {
+    if (ms == null) return 'unknown';
+    if (tipe === 'ip') {
+        if (ms < 10)  return 'great';
+        if (ms < 50)  return 'good';
+        if (ms < 150) return 'medium';
+        return 'bad';
+    }
+    // url
+    if (ms < 200)  return 'great';
+    if (ms < 500)  return 'good';
+    if (ms < 1500) return 'medium';
     return 'bad';
 }
-function pingPct(ms,status){
-    if (status==='offline') return 100;
-    if (status==='timeout') return 50;
-    if (!ms) return 0;
-    if (ms<50)  return Math.max(5,100-(ms/50)*40);
-    if (ms<200) return Math.max(5,60-((ms-50)/150)*30);
-    return Math.max(5,30-Math.min(25,(ms-200)/50));
+
+// Skor kecepatan 0-100 (makin kecil ms → makin tinggi skor → bar lebih panjang & hijau)
+function pingPct(ms, status, tipe) {
+    if (status === 'offline') return 0;
+    if (status === 'timeout') return 5;
+    if (ms == null) return 0;
+    const scale = (tipe === 'ip') ? 300 : 3000;
+    return Math.min(100, Math.max(5, Math.round(100 - (ms / scale) * 100)));
 }
 
-function updateCard(data){
-    const {id,status,ping_ms} = data;
-    const card  = document.getElementById('card-'       +id); if(!card) return;
-    const dot   = document.getElementById('dot-'        +id);
-    const chip  = document.getElementById('chip-'       +id);
-    const meter = document.getElementById('meter-'      +id);
-    const pval  = document.getElementById('ping-val-'   +id);
-    const gFill = document.getElementById('gauge-fill-' +id);
-    const gText = document.getElementById('gauge-text-' +id);
+function pingLabel(ms, status) {
+    if (status === 'online' && ms != null) {
+        return ms >= 1000 ? (ms/1000).toFixed(2)+' s' : Math.round(ms)+' ms';
+    }
+    return status ? status.toUpperCase() : '—';
+}
+
+function gaugeColor(cls) {
+    return {great:'#10b981', good:'#34d399', medium:'#f59e0b', bad:'#ef4444', unknown:'#e2e8f0'}[cls] || '#e2e8f0';
+}
+
+function updateCard(data) {
+    const { id, status, ping_ms } = data;
+    const card  = document.getElementById('card-'       + id); if (!card) return;
+    const tipe  = card.dataset.tipe || 'url';
+    const dot   = document.getElementById('dot-'        + id);
+    const chip  = document.getElementById('chip-'       + id);
+    const meter = document.getElementById('meter-'      + id);
+    const pval  = document.getElementById('ping-val-'   + id);
+    const gFill = document.getElementById('gauge-fill-' + id);
+    const gText = document.getElementById('gauge-text-' + id);
 
     card.dataset.status = status;
     dot.className = 'status-dot ' + status;
 
-    const chipMap = {online:'<i class="fa fa-circle-check"></i> Online',offline:'<i class="fa fa-circle-xmark"></i> Offline',timeout:'<i class="fa fa-hourglass"></i> Timeout'};
+    const chipMap = {
+        online:  '<i class="fa fa-circle-check"></i> Online',
+        offline: '<i class="fa fa-circle-xmark"></i> Offline',
+        timeout: '<i class="fa fa-hourglass"></i> Timeout'
+    };
     chip.className = 'status-chip sc-' + status;
     chip.innerHTML = chipMap[status] || '—';
 
-    const cls   = pingClass(ping_ms);
-    const pct   = pingPct(ping_ms,status);
-    const label = status==='online' && ping_ms!=null ? Math.round(ping_ms)+' ms' : status.toUpperCase();
-    pval.className   = 'meter-ping-v '+cls;
-    pval.textContent = label;
-    meter.className  = 'meter-fill '+cls;
-    setTimeout(()=>{ meter.style.width = pct+'%'; }, 30);
+    const cls = status === 'online' ? pingClass(ping_ms, tipe) : (status === 'timeout' ? 'medium' : 'bad');
+    const pct = pingPct(ping_ms, status, tipe);
+    const gc  = status === 'online' ? gaugeColor(cls) : (status === 'timeout' ? '#f59e0b' : (status === 'offline' ? '#ef4444' : '#e2e8f0'));
 
-    const gc = {online:'#10b981',offline:'#ef4444',timeout:'#f59e0b'}[status] || '#e2e8f0';
+    pval.className   = 'meter-ping-v ' + cls;
+    pval.textContent = pingLabel(ping_ms, status);
+    meter.className  = 'meter-fill ' + cls;
+    setTimeout(() => { meter.style.width = pct + '%'; }, 30);
+
+    // Gauge arc
     gFill.setAttribute('stroke', gc);
-    gFill.setAttribute('stroke-dashoffset', Math.round(141.3*(1-pct/100)*10)/10);
+    gFill.setAttribute('stroke-dashoffset', Math.round(141.3 * (1 - pct / 100) * 10) / 10);
     gText.setAttribute('fill', gc);
-    gText.textContent = status==='online' && ping_ms!=null ? Math.round(ping_ms)+'ms' : (status==='offline'?'DOWN':'T.O.');
+    const msNum = ping_ms != null ? parseFloat(ping_ms) : null;
+    gText.textContent = status === 'online' && msNum != null
+        ? (msNum >= 1000 ? (msNum/1000).toFixed(1)+'s' : Math.round(msNum)+'ms')
+        : (status === 'offline' ? 'DOWN' : status === 'timeout' ? 'T.O.' : '—');
 }
 
-function updateStats(){
-    let ol=0,off=0,to=0,bel=0;
-    document.querySelectorAll('.mon-card').forEach(c=>{
-        const s=c.dataset.status;
-        if(s==='online')ol++; else if(s==='offline')off++; else if(s==='timeout')to++; else bel++;
+function updateStats() {
+    let ol=0, off=0, to=0, bel=0;
+    document.querySelectorAll('.mon-card').forEach(c => {
+        const s = c.dataset.status;
+        if (s==='online') ol++; else if (s==='offline') off++; else if (s==='timeout') to++; else bel++;
     });
     document.getElementById('stat-online').textContent  = ol;
     document.getElementById('stat-offline').textContent = off;
@@ -686,111 +814,114 @@ function updateStats(){
     document.getElementById('stat-belum').textContent   = bel;
 }
 
-function setLoading(id,show){
-    const el  = document.getElementById('loading-'+id);
-    const btn = document.getElementById('btn-cek-'+id);
-    if(el)  el.classList.toggle('show',show);
-    if(btn) btn.disabled = show;
+function setLoading(id, show) {
+    const el  = document.getElementById('loading-' + id);
+    const btn = document.getElementById('btn-cek-' + id);
+    if (el)  el.classList.toggle('show', show);
+    if (btn) btn.disabled = show;
 }
 
-function cekSatu(id){
-    setLoading(id,true);
-    fetch(APP_URL+'/pages/cek_koneksi.php?ajax_cek='+id)
-        .then(r=>r.json())
-        .then(data=>{ setLoading(id,false); updateCard(data); updateStats(); })
-        .catch(()=>setLoading(id,false));
+function cekSatu(id) {
+    setLoading(id, true);
+    fetch(APP_URL + '/pages/cek_koneksi.php?ajax_cek=' + id)
+        .then(r => r.json())
+        .then(data => { setLoading(id, false); updateCard(data); updateStats(); })
+        .catch(() => setLoading(id, false));
 }
 
-function cekSemua(){
+function cekSemua() {
     const btn  = document.getElementById('btn-cek-semua');
     const icon = document.getElementById('cek-icon');
     btn.disabled   = true;
     icon.className = 'fa fa-rotate-right fa-spin';
-    document.querySelectorAll('.mon-card').forEach(c=>setLoading(c.id.replace('card-',''),true));
+    document.querySelectorAll('.mon-card').forEach(c => setLoading(c.id.replace('card-',''), true));
 
-    fetch(APP_URL+'/pages/cek_koneksi.php?ajax_cek_semua=1')
-        .then(r=>r.json())
-        .then(results=>{
-            results.forEach(data=>{ setLoading(data.id,false); updateCard(data); });
+    fetch(APP_URL + '/pages/cek_koneksi.php?ajax_cek_semua=1')
+        .then(r => r.json())
+        .then(results => {
+            results.forEach(data => { setLoading(data.id, false); updateCard(data); });
             updateStats();
             document.getElementById('last-refresh').textContent =
-                'Diperbarui: '+new Date().toLocaleTimeString('id-ID');
+                'Diperbarui: ' + new Date().toLocaleTimeString('id-ID');
         })
-        .catch(()=>document.querySelectorAll('.mon-card').forEach(c=>setLoading(c.id.replace('card-',''),false)))
-        .finally(()=>{ btn.disabled=false; icon.className='fa fa-rotate-right'; });
+        .catch(() => document.querySelectorAll('.mon-card').forEach(c => setLoading(c.id.replace('card-',''), false)))
+        .finally(() => { btn.disabled = false; icon.className = 'fa fa-rotate-right'; });
 }
 
-function lihatLog(id,nama){
+function lihatLog(id, nama) {
     document.getElementById('log-title').textContent = nama;
     document.getElementById('log-body').innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px;"><i class="fa fa-spinner fa-spin"></i> Memuat…</div>';
     openModal('m-log-mon');
-    fetch(APP_URL+'/pages/cek_koneksi.php?get_log='+id)
-        .then(r=>r.json())
-        .then(logs=>{
-            if(!logs.length){ document.getElementById('log-body').innerHTML='<div style="text-align:center;color:#94a3b8;padding:20px;"><i class="fa fa-inbox"></i> Belum ada riwayat</div>'; return; }
-            const cMap={online:'#10b981',offline:'#ef4444',timeout:'#f59e0b'};
-            const iMap={online:'fa-circle-check',offline:'fa-circle-xmark',timeout:'fa-hourglass-half'};
-            document.getElementById('log-body').innerHTML=logs.map(l=>{
-                const dt=new Date(l.cek_at).toLocaleString('id-ID');
-                const col=cMap[l.status]||'#94a3b8';
-                const ic =iMap[l.status]||'fa-circle-question';
-                const pingTxt=l.ping_ms!=null?Math.round(l.ping_ms)+' ms':'—';
+    fetch(APP_URL + '/pages/cek_koneksi.php?get_log=' + id)
+        .then(r => r.json())
+        .then(logs => {
+            if (!logs.length) {
+                document.getElementById('log-body').innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px;"><i class="fa fa-inbox"></i> Belum ada riwayat</div>';
+                return;
+            }
+            const cMap = { online:'#10b981', offline:'#ef4444', timeout:'#f59e0b' };
+            const iMap = { online:'fa-circle-check', offline:'fa-circle-xmark', timeout:'fa-hourglass-half' };
+            document.getElementById('log-body').innerHTML = logs.map(l => {
+                const dt     = new Date(l.cek_at).toLocaleString('id-ID');
+                const col    = cMap[l.status] || '#94a3b8';
+                const ic     = iMap[l.status] || 'fa-circle-question';
+                const ms     = l.ping_ms != null ? parseFloat(l.ping_ms) : null;
+                const pingTx = ms != null ? (ms >= 1000 ? (ms/1000).toFixed(2)+' s' : Math.round(ms)+' ms') : '—';
                 return `<div class="log-item ${escHtml(l.status)}">
                     <i class="fa ${ic}" style="color:${col};font-size:13px;flex-shrink:0;"></i>
                     <div style="flex:1;">
                       <div style="font-weight:700;font-size:12px;color:#1e293b;">${escHtml(l.status.toUpperCase())} <span style="font-weight:400;color:#94a3b8;font-size:11px;">${escHtml(l.pesan||'')}</span></div>
-                      <div style="font-size:10px;color:#94a3b8;">${dt}${l.http_code?` · HTTP ${escHtml(String(l.http_code))}`:''}
+                      <div style="font-size:10px;color:#94a3b8;">${dt}${l.http_code ? ' · HTTP '+escHtml(String(l.http_code)) : ''}</div>
                     </div>
-                    </div>
-                    <div style="font-size:12px;font-weight:800;color:${col};">${pingTxt}</div>
+                    <div style="font-size:12px;font-weight:800;color:${col};">${pingTx}</div>
                 </div>`;
             }).join('');
         });
 }
 
-function bukaModalTambah(){
+function bukaModalTambah() {
     document.getElementById('form-mon').reset();
-    document.getElementById('fm-mon-action').value      ='tambah';
-    document.getElementById('fm-mon-id').value          ='';
-    document.getElementById('modal-mon-title').textContent='Tambah Host Monitor';
-    document.getElementById('modal-mon-icon').className  ='fa fa-plus';
-    document.getElementById('fm-mon-btn-lbl').textContent='Simpan';
-    document.getElementById('fm-mon-aktif').checked     =true;
-    document.getElementById('fm-mon-timeout').value     ='3';
-    document.getElementById('fm-mon-kategori').value    ='Umum';
+    document.getElementById('fm-mon-action').value       = 'tambah';
+    document.getElementById('fm-mon-id').value           = '';
+    document.getElementById('modal-mon-title').textContent = 'Tambah Host Monitor';
+    document.getElementById('modal-mon-icon').className   = 'fa fa-plus';
+    document.getElementById('fm-mon-btn-lbl').textContent = 'Simpan';
+    document.getElementById('fm-mon-aktif').checked       = true;
+    document.getElementById('fm-mon-timeout').value       = '5';
+    document.getElementById('fm-mon-kategori').value      = 'Umum';
     togglePort('url');
     openModal('m-tambah-mon');
 }
 
-function editMonitor(id){
-    fetch(APP_URL+'/pages/cek_koneksi.php?get_monitor='+id)
-        .then(r=>r.json())
-        .then(d=>{
-            document.getElementById('fm-mon-action').value      ='edit';
-            document.getElementById('fm-mon-id').value          =d.id;
-            document.getElementById('modal-mon-title').textContent='Edit Host Monitor';
-            document.getElementById('modal-mon-icon').className  ='fa fa-pen';
-            document.getElementById('fm-mon-btn-lbl').textContent='Perbarui';
-            document.getElementById('fm-mon-nama').value    =d.nama      ||'';
-            document.getElementById('fm-mon-host').value    =d.host      ||'';
-            document.getElementById('fm-mon-tipe').value    =d.tipe      ||'url';
-            document.getElementById('fm-mon-kategori').value=d.kategori  ||'Umum';
-            document.getElementById('fm-mon-port').value    =d.port      ||'';
-            document.getElementById('fm-mon-timeout').value =d.timeout_detik||3;
-            document.getElementById('fm-mon-aktif').checked =d.aktif==1;
+function editMonitor(id) {
+    fetch(APP_URL + '/pages/cek_koneksi.php?get_monitor=' + id)
+        .then(r => r.json())
+        .then(d => {
+            document.getElementById('fm-mon-action').value       = 'edit';
+            document.getElementById('fm-mon-id').value           = d.id;
+            document.getElementById('modal-mon-title').textContent = 'Edit Host Monitor';
+            document.getElementById('modal-mon-icon').className   = 'fa fa-pen';
+            document.getElementById('fm-mon-btn-lbl').textContent = 'Perbarui';
+            document.getElementById('fm-mon-nama').value     = d.nama       || '';
+            document.getElementById('fm-mon-host').value     = d.host       || '';
+            document.getElementById('fm-mon-tipe').value     = d.tipe       || 'url';
+            document.getElementById('fm-mon-kategori').value = d.kategori   || 'Umum';
+            document.getElementById('fm-mon-port').value     = d.port       || '';
+            document.getElementById('fm-mon-timeout').value  = d.timeout_detik || 5;
+            document.getElementById('fm-mon-aktif').checked  = d.aktif == 1;
             togglePort(d.tipe);
             openModal('m-tambah-mon');
         });
 }
 
-function hapusMonitor(id,nama){
-    document.getElementById('hapus-mon-id').value         =id;
-    document.getElementById('hapus-mon-nama').textContent =nama;
+function hapusMonitor(id, nama) {
+    document.getElementById('hapus-mon-id').value          = id;
+    document.getElementById('hapus-mon-nama').textContent  = nama;
     openModal('m-hapus-mon');
 }
 
-function togglePort(tipe){
-    document.getElementById('port-wrap').style.opacity = tipe==='ip' ? '1' : '.4';
+function togglePort(tipe) {
+    document.getElementById('port-wrap').style.opacity = tipe === 'ip' ? '1' : '.4';
 }
 </script>
 
