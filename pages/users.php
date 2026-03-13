@@ -3,24 +3,40 @@
 session_start();
 require_once '../config.php';
 requireLogin();
-if (!hasRole('admin')) { setFlash('danger', 'Akses ditolak.'); redirect(APP_URL . '/dashboard.php'); }
+if (!hasRole(['admin','hrd'])) { setFlash('danger', 'Akses ditolak.'); redirect(APP_URL . '/dashboard.php'); }
 $page_title  = 'Pengguna';
 $active_menu = 'users';
 
-// ── Definisi role valid di satu tempat ────────────────────────────────────────
-define('VALID_ROLES', ['user', 'teknisi', 'teknisi_ipsrs', 'admin']);
+// ── Definisi role valid — sesuai ENUM di tabel users ─────────────────────────
+define('VALID_ROLES', ['user', 'teknisi', 'teknisi_ipsrs', 'admin', 'hrd']);
 
 $role_labels = [
     'admin'         => 'Admin',
     'teknisi'       => 'Teknisi IT',
     'teknisi_ipsrs' => 'Teknisi IPSRS',
+    'hrd'           => 'HRD',
     'user'          => 'User',
 ];
+
+// HRD hanya boleh lihat & kelola role non-admin
+$is_hrd   = ($_SESSION['user_role'] ?? '') === 'hrd';
+$is_admin = ($_SESSION['user_role'] ?? '') === 'admin';
+
+// Role yang boleh di-assign oleh HRD (tidak boleh assign admin)
+$assignable_roles = $is_hrd
+    ? ['user', 'teknisi', 'teknisi_ipsrs', 'hrd']
+    : VALID_ROLES;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $act = $_POST['action'] ?? '';
 
     if ($act === 'tambah') {
+        // HRD tidak boleh tambah admin
+        if ($is_hrd && !hasRole('admin')) {
+            setFlash('danger', 'HRD tidak berwenang menambah akun Admin.');
+            redirect(APP_URL . '/pages/users.php');
+        }
+
         $n  = trim($_POST['nama']     ?? '');
         $u  = trim($_POST['username'] ?? '');
         $e  = trim($_POST['email']    ?? '');
@@ -29,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $d  = $_POST['divisi']        ?? '';
         $hp = trim($_POST['no_hp']    ?? '');
 
-        if (!in_array($r, VALID_ROLES)) $r = 'user';
+        if (!in_array($r, $assignable_roles)) $r = 'user';
 
         if ($n && $u && $e && strlen($p) >= 6) {
             $st = $pdo->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
@@ -54,7 +70,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $d  = $_POST['divisi']      ?? '';
         $hp = trim($_POST['no_hp']  ?? '');
 
-        if (!in_array($r, VALID_ROLES)) {
+        // HRD tidak boleh edit akun admin
+        if ($is_hrd) {
+            $tgt = $pdo->prepare("SELECT role FROM users WHERE id=?");
+            $tgt->execute([$id]);
+            $tgt_role = $tgt->fetchColumn();
+            if ($tgt_role === 'admin') {
+                setFlash('danger', 'HRD tidak berwenang mengubah akun Admin.');
+                redirect(APP_URL . '/pages/users.php');
+            }
+        }
+
+        if (!in_array($r, $assignable_roles)) {
             setFlash('danger', 'Role tidak valid.');
             redirect(APP_URL . '/pages/users.php');
         }
@@ -112,14 +139,14 @@ $users = $pdo->query("
            (SELECT COUNT(*) FROM tiket_ipsrs WHERE teknisi_id = u.id) AS handle_ipsrs,
            (SELECT COUNT(*) FROM tiket_ipsrs WHERE user_id    = u.id) AS req_ipsrs
     FROM users u
-    ORDER BY FIELD(u.role, 'admin', 'teknisi', 'teknisi_ipsrs', 'user'), u.nama
+    ORDER BY FIELD(u.role, 'admin', 'hrd', 'teknisi', 'teknisi_ipsrs', 'user'), u.nama
 ")->fetchAll();
 
 // ── Daftar divisi ─────────────────────────────────────────────────────────────
 $divs = getBagianList($pdo);
 
 // ── Hitung badge per role ─────────────────────────────────────────────────────
-$cnt_roles = ['admin' => 0, 'teknisi' => 0, 'teknisi_ipsrs' => 0, 'user' => 0, 'nonaktif' => 0];
+$cnt_roles = ['admin' => 0, 'teknisi' => 0, 'teknisi_ipsrs' => 0, 'hrd' => 0, 'user' => 0, 'nonaktif' => 0];
 foreach ($users as $u) {
     $status = $u['status'] ?? 'aktif';
     if ($status === 'nonaktif') {
@@ -135,6 +162,7 @@ $rstyle = [
     'admin'         => ['bg' => '#ede9fe', 'color' => '#7c3aed', 'av' => 'av-purple', 'icon' => 'fa-shield-alt'],
     'teknisi'       => ['bg' => '#dbeafe', 'color' => '#1d4ed8', 'av' => 'av-blue',   'icon' => 'fa-wrench'],
     'teknisi_ipsrs' => ['bg' => '#d1fae5', 'color' => '#065f46', 'av' => 'av-green',  'icon' => 'fa-screwdriver-wrench'],
+    'hrd'           => ['bg' => '#fce7f3', 'color' => '#9d174d', 'av' => 'av-pink',   'icon' => 'fa-people-group'],
     'user'          => ['bg' => '#f3f4f6', 'color' => '#374151', 'av' => '',           'icon' => 'fa-user'],
 ];
 
@@ -156,13 +184,14 @@ include '../includes/header.php';
   <!-- ── Summary Cards ── -->
   <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
     <?php foreach ([
-      ['admin',         'Admin',           'fa-shield-alt',        '#ede9fe', '#7c3aed'],
-      ['teknisi',       'Teknisi IT',      'fa-wrench',            '#dbeafe', '#1d4ed8'],
-      ['teknisi_ipsrs', 'Teknisi IPSRS',   'fa-screwdriver-wrench','#d1fae5', '#065f46'],
-      ['user',          'User',            'fa-user',              '#f3f4f6', '#374151'],
-      ['nonaktif',      'Nonaktif',        'fa-ban',               '#fee2e2', '#991b1b'],
+      ['admin',         'Admin',         'fa-shield-alt',         '#ede9fe', '#7c3aed'],
+      ['teknisi',       'Teknisi IT',    'fa-wrench',             '#dbeafe', '#1d4ed8'],
+      ['teknisi_ipsrs', 'Teknisi IPSRS', 'fa-screwdriver-wrench', '#d1fae5', '#065f46'],
+      ['hrd',           'HRD',           'fa-people-group',       '#fce7f3', '#9d174d'],
+      ['user',          'User',          'fa-user',               '#f3f4f6', '#374151'],
+      ['nonaktif',      'Nonaktif',      'fa-ban',                '#fee2e2', '#991b1b'],
     ] as [$key, $lbl, $ic, $bg, $col]): ?>
-    <div style="background:#fff;border:1px solid #f0f0f0;border-radius:8px;padding:10px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 1px 4px rgba(0,0,0,.05);min-width:130px;">
+    <div style="background:#fff;border:1px solid #f0f0f0;border-radius:8px;padding:10px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 1px 4px rgba(0,0,0,.05);min-width:120px;">
       <div style="width:36px;height:36px;border-radius:50%;background:<?= $bg ?>;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
         <i class="fa <?= $ic ?>" style="color:<?= $col ?>;font-size:14px;"></i>
       </div>
@@ -198,10 +227,12 @@ include '../includes/header.php';
         </thead>
         <tbody>
           <?php $no = 1; foreach ($users as $u):
-            $role    = $u['role'] ?? 'user';
-            $status  = $u['status'] ?? 'aktif';
-            $rs      = $rstyle[$role] ?? $rstyle['user'];
-            $rl      = $role_labels[$role] ?? ucfirst($role);
+            $role   = $u['role'] ?? 'user';
+            $status = $u['status'] ?? 'aktif';
+            $rs     = $rstyle[$role] ?? $rstyle['user'];
+            $rl     = $role_labels[$role] ?? ucfirst($role);
+            // HRD tidak bisa edit akun admin
+            $can_edit = !($is_hrd && $role === 'admin');
           ?>
           <tr>
             <td style="color:#cbd5e1;"><?= $no++ ?></td>
@@ -233,17 +264,13 @@ include '../includes/header.php';
             <!-- Aktivitas -->
             <td style="font-size:12px;">
               <?php if ($role === 'teknisi'): ?>
-                <span style="color:#1d4ed8;">
-                  <i class="fa fa-wrench"></i> <?= (int)$u['handle'] ?> tiket IT
-                </span>
+                <span style="color:#1d4ed8;"><i class="fa fa-wrench"></i> <?= (int)$u['handle'] ?> tiket IT</span>
               <?php elseif ($role === 'teknisi_ipsrs'): ?>
-                <span style="color:#065f46;">
-                  <i class="fa fa-screwdriver-wrench"></i> <?= (int)$u['handle_ipsrs'] ?> tiket IPSRS
-                </span>
+                <span style="color:#065f46;"><i class="fa fa-screwdriver-wrench"></i> <?= (int)$u['handle_ipsrs'] ?> tiket IPSRS</span>
               <?php elseif ($role === 'admin'): ?>
-                <span style="color:#7c3aed;">
-                  <i class="fa fa-shield-alt"></i> Administrator
-                </span>
+                <span style="color:#7c3aed;"><i class="fa fa-shield-alt"></i> Administrator</span>
+              <?php elseif ($role === 'hrd'): ?>
+                <span style="color:#9d174d;"><i class="fa fa-people-group"></i> SDM &amp; Kepegawaian</span>
               <?php else: ?>
                 <span style="color:#1d4ed8;">
                   <i class="fa fa-paper-plane"></i>
@@ -270,7 +297,7 @@ include '../includes/header.php';
 
             <!-- Aksi -->
             <td style="text-align:center;white-space:nowrap;">
-              <?php if ($u['id'] != (int)$_SESSION['user_id']): ?>
+              <?php if ($u['id'] != (int)$_SESSION['user_id'] && $can_edit): ?>
 
               <button class="btn btn-warning btn-sm" title="Edit data & role"
                 onclick='editUser(<?= json_encode([
@@ -300,8 +327,10 @@ include '../includes/header.php';
                 <i class="fa fa-key"></i>
               </button>
 
-              <?php else: ?>
+              <?php elseif ($u['id'] == (int)$_SESSION['user_id']): ?>
               <span style="font-size:11px;color:#94a3b8;font-style:italic;">Akun Anda</span>
+              <?php else: ?>
+              <span style="font-size:11px;color:#cbd5e1;" title="HRD tidak berwenang edit Admin"><i class="fa fa-lock"></i></span>
               <?php endif; ?>
             </td>
           </tr>
@@ -350,14 +379,21 @@ include '../includes/header.php';
         <div class="form-group">
           <label>Role <span class="req">*</span></label>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <?php foreach ([
-              ['user',         'User',           'fa-user',              '#f3f4f6','#374151', 'Buat & pantau tiket sendiri', true],
-              ['teknisi',      'Teknisi IT',     'fa-wrench',            '#dbeafe','#1d4ed8', 'Proses & selesaikan tiket IT', false],
-              ['teknisi_ipsrs','Teknisi IPSRS',  'fa-screwdriver-wrench','#d1fae5','#065f46', 'Proses tiket Sarpras/IPSRS', false],
-              ['admin',        'Admin',          'fa-shield-alt',        '#ede9fe','#7c3aed', 'Akses penuh ke semua fitur', false],
-            ] as [$rv,$rl,$ri,$rbg,$rc,$rdesc,$checked]): ?>
-            <label id="albl-<?= $rv ?>" style="border:2px solid <?= $checked?$rbg.'':' #e5e7eb' ?>;border-radius:8px;padding:10px;cursor:pointer;transition:all .18s;display:flex;gap:8px;align-items:flex-start;background:<?= $checked?$rbg:'#fff' ?>;">
-              <input type="radio" name="role" value="<?= $rv ?>" <?= $checked?'checked':'' ?> style="margin-top:3px;flex-shrink:0;" onchange="hilightRoleAdd()">
+
+            <?php
+            $role_opts = [
+              ['user',         'User',          'fa-user',               '#f3f4f6','#374151', 'Buat & pantau tiket sendiri',  true],
+              ['teknisi',      'Teknisi IT',    'fa-wrench',             '#dbeafe','#1d4ed8', 'Proses & selesaikan tiket IT', false],
+              ['teknisi_ipsrs','Teknisi IPSRS', 'fa-screwdriver-wrench', '#d1fae5','#065f46', 'Proses tiket Sarpras/IPSRS',  false],
+              ['hrd',          'HRD',           'fa-people-group',       '#fce7f3','#9d174d', 'Manajemen SDM & kepegawaian',  false],
+              ['admin',        'Admin',         'fa-shield-alt',         '#ede9fe','#7c3aed', 'Akses penuh ke semua fitur',   false],
+            ];
+            // HRD tidak bisa tambah admin
+            if ($is_hrd) $role_opts = array_filter($role_opts, fn($r) => $r[0] !== 'admin');
+            foreach ($role_opts as [$rv,$rl,$ri,$rbg,$rc,$rdesc,$checked]):
+            ?>
+            <label id="albl-<?= $rv ?>" style="border:2px solid <?= $checked ? '#e5e7eb' : '#e5e7eb' ?>;border-radius:8px;padding:10px;cursor:pointer;transition:all .18s;display:flex;gap:8px;align-items:flex-start;background:<?= $checked ? $rbg : '#fff' ?>;">
+              <input type="radio" name="role" value="<?= $rv ?>" <?= $checked ? 'checked' : '' ?> style="margin-top:3px;flex-shrink:0;" onchange="hilightRoleAdd()">
               <div>
                 <div style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:700;">
                   <span style="width:20px;height:20px;border-radius:50%;background:<?= $rbg ?>;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">
@@ -369,6 +405,7 @@ include '../includes/header.php';
               </div>
             </label>
             <?php endforeach; ?>
+
           </div>
         </div>
 
@@ -443,15 +480,21 @@ include '../includes/header.php';
         <!-- Role kartu pilihan -->
         <div class="form-group">
           <label>Role <span class="req">*</span></label>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <?php foreach ([
-              ['user',         'User',           'fa-user',              '#f3f4f6','#374151', 'Buat & pantau tiket sendiri'],
-              ['teknisi',      'Teknisi IT',     'fa-wrench',            '#dbeafe','#1d4ed8', 'Proses & selesaikan tiket IT'],
-              ['teknisi_ipsrs','Teknisi IPSRS',  'fa-screwdriver-wrench','#d1fae5','#065f46', 'Proses tiket Sarpras/IPSRS'],
-              ['admin',        'Admin',          'fa-shield-alt',        '#ede9fe','#7c3aed', 'Akses penuh ke semua fitur'],
-            ] as [$rv,$rl,$ri,$rbg,$rc,$rdesc]): ?>
-            <label id="lbl-<?= $rv ?>" style="border:2px solid #e5e7eb;border-radius:8px;padding:10px;cursor:pointer;transition:border-color .18s ease,background .18s ease;display:flex;gap:8px;align-items:flex-start;background:#fff;"
-              data-bg="<?= $rbg ?>" data-border="<?= $rc ?>20">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" id="edit-role-grid">
+
+            <?php
+            $edit_role_opts = [
+              ['user',         'User',          'fa-user',               '#f3f4f6','#374151', 'Buat & pantau tiket sendiri'],
+              ['teknisi',      'Teknisi IT',    'fa-wrench',             '#dbeafe','#1d4ed8', 'Proses & selesaikan tiket IT'],
+              ['teknisi_ipsrs','Teknisi IPSRS', 'fa-screwdriver-wrench', '#d1fae5','#065f46', 'Proses tiket Sarpras/IPSRS'],
+              ['hrd',          'HRD',           'fa-people-group',       '#fce7f3','#9d174d', 'Manajemen SDM & kepegawaian'],
+              ['admin',        'Admin',         'fa-shield-alt',         '#ede9fe','#7c3aed', 'Akses penuh ke semua fitur'],
+            ];
+            // HRD tidak bisa assign role admin
+            if ($is_hrd) $edit_role_opts = array_filter($edit_role_opts, fn($r) => $r[0] !== 'admin');
+            foreach ($edit_role_opts as [$rv,$rl,$ri,$rbg,$rc,$rdesc]):
+            ?>
+            <label id="lbl-<?= $rv ?>" style="border:2px solid #e5e7eb;border-radius:8px;padding:10px;cursor:pointer;transition:border-color .18s ease,background .18s ease;display:flex;gap:8px;align-items:flex-start;background:#fff;">
               <input type="radio" name="role" value="<?= $rv ?>" style="margin-top:3px;flex-shrink:0;" onchange="hilightRole()">
               <div>
                 <div style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:700;">
@@ -464,6 +507,7 @@ include '../includes/header.php';
               </div>
             </label>
             <?php endforeach; ?>
+
           </div>
         </div>
 
@@ -532,6 +576,15 @@ include '../includes/header.php';
 
 
 <script>
+/* ── Warna highlight per role ───────────────────────── */
+const roleColors = {
+  user:         { border: '#d1d5db', bg: '#f9fafb' },
+  teknisi:      { border: '#93c5fd', bg: '#eff6ff' },
+  teknisi_ipsrs:{ border: '#6ee7b7', bg: '#f0fdf4' },
+  hrd:          { border: '#f9a8d4', bg: '#fdf2f8' },
+  admin:        { border: '#c4b5fd', bg: '#faf5ff' },
+};
+
 /* ── Isi form Edit ─────────────────────────────────── */
 function editUser(u) {
   document.getElementById('e-id').value    = u.id;
@@ -545,13 +598,12 @@ function editUser(u) {
     sel.options[i].selected = (sel.options[i].value === (u.divisi || ''));
   }
 
-  // Set radio role — pastikan salah satu ter-check
+  // Set radio role
   let found = false;
   document.querySelectorAll('#m-edit [name=role]').forEach(function(r) {
     r.checked = (r.value === u.role);
     if (r.checked) found = true;
   });
-  // Fallback: jika role tidak dikenal, default ke 'user'
   if (!found) {
     const fallback = document.querySelector('#m-edit [name=role][value=user]');
     if (fallback) fallback.checked = true;
@@ -562,24 +614,13 @@ function editUser(u) {
 }
 
 /* ── Highlight kartu role (Edit) ───────────────────── */
-const roleColors = {
-  user:         { border: '#d1d5db', bg: '#f9fafb' },
-  teknisi:      { border: '#93c5fd', bg: '#eff6ff' },
-  teknisi_ipsrs:{ border: '#6ee7b7', bg: '#f0fdf4' },
-  admin:        { border: '#c4b5fd', bg: '#faf5ff' },
-};
 function hilightRole() {
   document.querySelectorAll('#m-edit [name=role]').forEach(function(r) {
     const lbl = document.getElementById('lbl-' + r.value);
     if (!lbl) return;
     const c = roleColors[r.value] || { border: '#e5e7eb', bg: '#fff' };
-    if (r.checked) {
-      lbl.style.borderColor = c.border;
-      lbl.style.background  = c.bg;
-    } else {
-      lbl.style.borderColor = '#e5e7eb';
-      lbl.style.background  = '#fff';
-    }
+    lbl.style.borderColor = r.checked ? c.border : '#e5e7eb';
+    lbl.style.background  = r.checked ? c.bg      : '#fff';
   });
 }
 
@@ -589,16 +630,10 @@ function hilightRoleAdd() {
     const lbl = document.getElementById('albl-' + r.value);
     if (!lbl) return;
     const c = roleColors[r.value] || { border: '#e5e7eb', bg: '#fff' };
-    if (r.checked) {
-      lbl.style.borderColor = c.border;
-      lbl.style.background  = c.bg;
-    } else {
-      lbl.style.borderColor = '#e5e7eb';
-      lbl.style.background  = '#fff';
-    }
+    lbl.style.borderColor = r.checked ? c.border : '#e5e7eb';
+    lbl.style.background  = r.checked ? c.bg      : '#fff';
   });
 }
-// Init highlight modal tambah
 hilightRoleAdd();
 
 /* ── Reset Password modal ───────────────────────────── */

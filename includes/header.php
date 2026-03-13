@@ -21,14 +21,14 @@ $_css_url  = APP_URL . '/assets/css/style.css';
   --sb-width-collapsed: 0px;
   --topnav-h: 54px;
 
-  /* Brand colors — sama persis dengan login.php */
+  /* Brand colors */
   --primary:        #00e5b0;
   --primary-dark:   #00c896;
   --primary-soft:   rgba(0,229,176,0.12);
   --primary-border: rgba(0,229,176,0.25);
   --primary-glow:   rgba(0,229,176,0.20);
 
-  /* Sidebar — dark navy matching login bg */
+  /* Sidebar */
   --sb-bg:           #0a0f14;
   --sb-surface:      #0d1520;
   --sb-card:         #111c2a;
@@ -40,7 +40,7 @@ $_css_url  = APP_URL . '/assets/css/style.css';
   --sb-item-hover:   rgba(255,255,255,0.05);
   --sb-active-bg:    rgba(0,229,176,0.10);
 
-  /* Top nav — light surface */
+  /* Top nav */
   --tn-bg:     #ffffff;
   --tn-border: rgba(0,0,0,0.07);
   --tn-text:   #1e2d3d;
@@ -97,7 +97,7 @@ input, button, select, textarea, table {
 .sidebar::-webkit-scrollbar { width: 3px; }
 .sidebar::-webkit-scrollbar-thumb { background: rgba(0,229,176,0.12); border-radius: 99px; }
 
-/* subtle grid overlay — seperti di login */
+/* subtle grid overlay */
 .sidebar::before {
   content: '';
   position: absolute; inset: 0; pointer-events: none; z-index: 0;
@@ -219,6 +219,13 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
 .nav-group-bd .nav-item a:hover { padding-left: 39px !important; color: rgba(255,255,255,0.8) !important; }
 .nav-group-bd .nav-item.active a { color: var(--sb-text-active) !important; }
 
+/* ── Nav divider ── */
+.sb-divider {
+  height: 1px;
+  background: var(--sb-border);
+  margin: 6px 14px;
+}
+
 /* ── Bottom area ── */
 .sb-bottom { flex-shrink: 0; border-top: 1px solid var(--sb-border); padding: 8px 0 4px; }
 
@@ -261,7 +268,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
 .sb-overlay.active { display: block; }
 
 /* ═══════════════════════════════════════════════════════
-   TOP NAV — light with teal accent
+   TOP NAV
 ═══════════════════════════════════════════════════════ */
 .topnav {
   position: fixed; top: 0; left: var(--sb-width); right: 0;
@@ -453,7 +460,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
     <div style="min-width:0;">
       <div class="sb-user-name"><?= clean($_SESSION['user_nama']) ?></div>
       <?php
-      $_role_map = ['admin'=>'Admin','teknisi'=>'Teknisi IT','teknisi_ipsrs'=>'Teknisi IPSRS','user'=>'User'];
+      $_role_map = ['admin'=>'Admin','teknisi'=>'Teknisi IT','teknisi_ipsrs'=>'Teknisi IPSRS','hrd'=>'HRD','user'=>'User'];
       $_role_display = $_role_map[$_SESSION['user_role']] ?? ucfirst($_SESSION['user_role']);
       ?>
       <div class="sb-user-role"><?= $_role_display ?> &mdash; <?= clean($_SESSION['user_divisi'] ?? '-') ?></div>
@@ -514,24 +521,50 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       ")->fetchColumn(); } catch(Exception $e) {}
   }
 
-  // Hitung BA belum selesai (untuk badge)
   $cnt_ba = 0;
   if (in_array($_cur_role, ['teknisi', 'admin'])) {
       try { $cnt_ba = (int)$pdo->query("SELECT COUNT(*) FROM berita_acara")->fetchColumn(); } catch(Exception $e) {}
   }
 
-  // Active group detection
+  // ── Badge mutasi bulan ini (admin + teknisi) ──────────────────────
+  $cnt_mutasi_bulan = 0;
+  if (in_array($_cur_role, ['admin', 'teknisi'])) {
+      try { $cnt_mutasi_bulan = (int)$pdo->query("
+          SELECT COUNT(*) FROM mutasi_aset
+          WHERE status_mutasi = 'selesai'
+            AND MONTH(created_at) = MONTH(CURDATE())
+            AND YEAR(created_at)  = YEAR(CURDATE())
+      ")->fetchColumn(); } catch(Exception $e) {}
+  }
+
+  // ── Badge Management: karyawan aktif belum absen hari ini ──
+  $cnt_belum_absen = 0;
+  if (in_array($_cur_role, ['admin', 'hrd'])) {
+      try { $cnt_belum_absen = (int)$pdo->query("
+          SELECT COUNT(*) FROM users
+          WHERE status = 'aktif'
+            AND id NOT IN (
+                SELECT user_id FROM absensi WHERE DATE(tanggal) = CURDATE()
+            )
+      ")->fetchColumn(); } catch(Exception $e) {}
+  }
+
+  // ── Active group detection ──
   $grp_tiket_it    = in_array($active_menu??'', ['antrian','semua_tiket','sla']);
   $grp_tiket_ipsrs = in_array($active_menu??'', ['antrian_ipsrs','semua_tiket_ipsrs','sla_ipsrs']);
-  $grp_aset_it     = in_array($active_menu??'', ['aset_it','maintenance_it','cek_koneksi','server_room']);
+  // ── UPDATED: lacak_aset & mutasi_aset masuk grup aset_it ──
+  $grp_aset_it     = in_array($active_menu??'', ['aset_it','maintenance_it','cek_koneksi','server_room','lacak_aset','mutasi_aset']);
   $grp_aset_ipsrs  = in_array($active_menu??'', ['aset_ipsrs','maintenance_ipsrs']);
   $grp_master      = in_array($active_menu??'', ['kategori','kategori_ipsrs','bagian','users','login_log']);
-  $grp_setting     = in_array($active_menu??'', ['setting_telegram','backup']); // ← tambah 'backup'
+  $grp_setting     = in_array($active_menu??'', ['setting_telegram','backup']);
   $grp_tiket_saya  = in_array($active_menu??'', ['buat_tiket','tiket_saya']);
   $grp_tiket_saya_ipsrs = in_array($active_menu??'', ['buat_tiket_sarpras','tiket_saya_ipsrs']);
+  $grp_management  = in_array($active_menu??'', ['master_karyawan','jabatan','shift','jadwal','absensi']);
   ?>
 
-  <!-- ══ USER BIASA ══ -->
+  <!-- ══════════════════════════════════════
+       USER BIASA
+  ══════════════════════════════════════ -->
   <?php if (hasRole('user')): ?>
 
     <div class="nav-item <?= ($active_menu??'')==='dashboard'?'active':'' ?>">
@@ -566,7 +599,10 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </div>
     </details>
 
-  <!-- ══ TEKNISI IT ══ -->
+
+  <!-- ══════════════════════════════════════
+       TEKNISI IT
+  ══════════════════════════════════════ -->
   <?php elseif (hasRole('teknisi')): ?>
 
     <div class="nav-item <?= ($active_menu??'')==='dashboard'?'active':'' ?>">
@@ -594,7 +630,6 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </div>
     </details>
 
-    <!-- Berita Acara — Teknisi -->
     <div class="nav-item <?= ($active_menu??'')==='berita_acara'?'active':'' ?>">
       <a href="<?= APP_URL ?>/pages/berita_acara.php">
         <i class="fa fa-file-contract ni"></i>
@@ -602,6 +637,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </a>
     </div>
 
+    <!-- Aset IT (Teknisi) -->
     <details class="nav-group" <?= $grp_aset_it ? 'open' : '' ?>>
       <summary class="nav-group-hd">
         <i class="fa fa-server ni-grp"></i><span>Aset IT</span>
@@ -611,6 +647,17 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       <div class="nav-group-bd">
         <div class="nav-item <?= ($active_menu??'')==='aset_it'?'active':'' ?>">
           <a href="<?= APP_URL ?>/pages/aset_it.php"><i class="fa fa-server ni"></i><span class="nl">Aset IT</span></a>
+        </div>
+        <div class="nav-item <?= ($active_menu??'')==='lacak_aset'?'active':'' ?>">
+          <a href="<?= APP_URL ?>#.php"><i class="fa fa-location-crosshairs ni"></i><span class="nl">Lacak Aset</span></a>
+        </div>
+        <div class="nav-item <?= ($active_menu??'')==='mutasi_aset'?'active':'' ?>">
+          <a href="<?= APP_URL ?>/pages/mutasi_aset.php">
+            <i class="fa fa-right-left ni"></i><span class="nl">Mutasi Aset</span>
+            <?php if ($cnt_mutasi_bulan): ?>
+            <span class="nc" style="background:#7c3aed;"><?= $cnt_mutasi_bulan ?></span>
+            <?php endif; ?>
+          </a>
         </div>
         <div class="nav-item <?= ($active_menu??'')==='maintenance_it'?'active':'' ?>">
           <a href="<?= APP_URL ?>/pages/maintenance_it.php"><i class="fa fa-screwdriver-wrench ni"></i><span class="nl">Maintenance IT</span>
@@ -628,7 +675,10 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </div>
     </details>
 
-  <!-- ══ TEKNISI IPSRS ══ -->
+
+  <!-- ══════════════════════════════════════
+       TEKNISI IPSRS
+  ══════════════════════════════════════ -->
   <?php elseif (hasRole('teknisi_ipsrs')): ?>
 
     <div class="nav-item <?= ($active_menu??'')==='dashboard'?'active':'' ?>">
@@ -674,13 +724,66 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </div>
     </details>
 
-  <!-- ══ ADMIN ══ -->
+
+  <!-- ══════════════════════════════════════
+       HRD
+  ══════════════════════════════════════ -->
+  <?php elseif (hasRole('hrd')): ?>
+
+    <div class="nav-item <?= ($active_menu??'')==='dashboard'?'active':'' ?>">
+      <a href="<?= APP_URL ?>/dashboard.php"><i class="fa fa-home ni"></i><span class="nl">Dashboard</span></a>
+    </div>
+
+    <div class="sb-divider"></div>
+
+    <details class="nav-group" <?= $grp_management ? 'open' : '' ?>>
+      <summary class="nav-group-hd">
+        <i class="fa fa-id-card-clip ni-grp"></i>
+        <span>Management</span>
+        <?php if ($cnt_belum_absen): ?><span class="nc-grp"><?= $cnt_belum_absen ?></span><?php endif; ?>
+        <i class="fa fa-chevron-down caret-grp"></i>
+      </summary>
+      <div class="nav-group-bd">
+        <div class="nav-item <?= ($active_menu??'')==='master_karyawan'?'active':'' ?>">
+          <a href="<?= APP_URL ?>/pages/master_karyawan.php">
+            <i class="fa fa-users ni"></i><span class="nl">Master Karyawan</span>
+          </a>
+        </div>
+        <div class="nav-item <?= ($active_menu??'')==='jabatan'?'active':'' ?>">
+          <a href="<?= APP_URL ?>/pages/jabatan.php">
+            <i class="fa fa-briefcase ni"></i><span class="nl">Jabatan</span>
+          </a>
+        </div>
+        <div class="nav-item <?= ($active_menu??'')==='shift'?'active':'' ?>">
+          <a href="<?= APP_URL ?>#.php">
+            <i class="fa fa-clock ni"></i><span class="nl">Shift</span>
+          </a>
+        </div>
+        <div class="nav-item <?= ($active_menu??'')==='jadwal'?'active':'' ?>">
+          <a href="<?= APP_URL ?>$.php">
+            <i class="fa fa-calendar-days ni"></i><span class="nl">Jadwal</span>
+          </a>
+        </div>
+        <div class="nav-item <?= ($active_menu??'')==='absensi'?'active':'' ?>">
+          <a href="<?= APP_URL ?>#.php">
+            <i class="fa fa-fingerprint ni"></i><span class="nl">Absensi</span>
+            <?php if ($cnt_belum_absen): ?><span class="nc" style="background:#f59e0b;"><?= $cnt_belum_absen ?></span><?php endif; ?>
+          </a>
+        </div>
+      </div>
+    </details>
+
+
+  <!-- ══════════════════════════════════════
+       ADMIN
+  ══════════════════════════════════════ -->
   <?php else: ?>
 
     <div class="nav-item <?= ($active_menu??'')==='dashboard'?'active':'' ?>">
       <a href="<?= APP_URL ?>/dashboard.php"><i class="fa fa-home ni"></i><span class="nl">Dashboard</span></a>
     </div>
 
+    <!-- Tiket IT -->
     <details class="nav-group" <?= $grp_tiket_it ? 'open' : '' ?>>
       <summary class="nav-group-hd">
         <i class="fa fa-desktop ni-grp"></i><span>Tiket IT</span>
@@ -702,6 +805,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </div>
     </details>
 
+    <!-- Tiket IPSRS -->
     <details class="nav-group" <?= $grp_tiket_ipsrs ? 'open' : '' ?>>
       <summary class="nav-group-hd">
         <i class="fa fa-toolbox ni-grp"></i><span>Tiket IPSRS</span>
@@ -723,7 +827,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </div>
     </details>
 
-    <!-- Berita Acara — Admin -->
+    <!-- Berita Acara -->
     <div class="nav-item <?= ($active_menu??'')==='berita_acara'?'active':'' ?>">
       <a href="<?= APP_URL ?>/pages/berita_acara.php">
         <i class="fa fa-file-contract ni"></i>
@@ -731,15 +835,30 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </a>
     </div>
 
+    <!-- Aset IT (Admin) -->
     <details class="nav-group" <?= $grp_aset_it ? 'open' : '' ?>>
       <summary class="nav-group-hd">
         <i class="fa fa-server ni-grp"></i><span>Aset IT</span>
-        <?php if ($cnt_mnt_urgent||$cnt_offline): ?><span class="nc-grp"><?= $cnt_mnt_urgent+$cnt_offline ?></span><?php endif; ?>
+        <?php $cnt_aset_badge = $cnt_mnt_urgent + $cnt_offline; ?>
+        <?php if ($cnt_aset_badge): ?><span class="nc-grp"><?= $cnt_aset_badge ?></span><?php endif; ?>
         <i class="fa fa-chevron-down caret-grp"></i>
       </summary>
       <div class="nav-group-bd">
         <div class="nav-item <?= ($active_menu??'')==='aset_it'?'active':'' ?>">
           <a href="<?= APP_URL ?>/pages/aset_it.php"><i class="fa fa-server ni"></i><span class="nl">Aset IT</span></a>
+        </div>
+        <div class="nav-item <?= ($active_menu??'')==='lacak_aset'?'active':'' ?>">
+          <a href="<?= APP_URL ?>#.php">
+            <i class="fa fa-location-crosshairs ni"></i><span class="nl">Lacak Aset</span>
+          </a>
+        </div>
+        <div class="nav-item <?= ($active_menu??'')==='mutasi_aset'?'active':'' ?>">
+          <a href="<?= APP_URL ?>/pages/mutasi_aset.php">
+            <i class="fa fa-right-left ni"></i><span class="nl">Mutasi Aset</span>
+            <?php if ($cnt_mutasi_bulan): ?>
+            <span class="nc" style="background:#7c3aed;"><?= $cnt_mutasi_bulan ?></span>
+            <?php endif; ?>
+          </a>
         </div>
         <div class="nav-item <?= ($active_menu??'')==='maintenance_it'?'active':'' ?>">
           <a href="<?= APP_URL ?>/pages/maintenance_it.php"><i class="fa fa-screwdriver-wrench ni"></i><span class="nl">Maintenance IT</span>
@@ -757,6 +876,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </div>
     </details>
 
+    <!-- Aset IPSRS -->
     <details class="nav-group" <?= $grp_aset_ipsrs ? 'open' : '' ?>>
       <summary class="nav-group-hd">
         <i class="fa fa-wrench ni-grp"></i><span>Aset IPSRS</span>
@@ -775,6 +895,45 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </div>
     </details>
 
+    <!-- ══ MANAGEMENT (Admin) ══ -->
+    <details class="nav-group" <?= $grp_management ? 'open' : '' ?>>
+      <summary class="nav-group-hd">
+        <i class="fa fa-id-card-clip ni-grp"></i>
+        <span>Management</span>
+        <?php if ($cnt_belum_absen): ?><span class="nc-grp"><?= $cnt_belum_absen ?></span><?php endif; ?>
+        <i class="fa fa-chevron-down caret-grp"></i>
+      </summary>
+      <div class="nav-group-bd">
+        <div class="nav-item <?= ($active_menu??'')==='master_karyawan'?'active':'' ?>">
+          <a href="<?= APP_URL ?>/pages/master_karyawan.php">
+            <i class="fa fa-users ni"></i><span class="nl">Master Karyawan</span>
+          </a>
+        </div>
+        <div class="nav-item <?= ($active_menu??'')==='jabatan'?'active':'' ?>">
+          <a href="<?= APP_URL ?>/pages/jabatan.php">
+            <i class="fa fa-briefcase ni"></i><span class="nl">Jabatan</span>
+          </a>
+        </div>
+        <div class="nav-item <?= ($active_menu??'')==='shift'?'active':'' ?>">
+          <a href="<?= APP_URL ?>#.php">
+            <i class="fa fa-clock ni"></i><span class="nl">Shift</span>
+          </a>
+        </div>
+        <div class="nav-item <?= ($active_menu??'')==='jadwal'?'active':'' ?>">
+          <a href="<?= APP_URL ?>#.php">
+            <i class="fa fa-calendar-days ni"></i><span class="nl">Jadwal</span>
+          </a>
+        </div>
+        <div class="nav-item <?= ($active_menu??'')==='absensi'?'active':'' ?>">
+          <a href="<?= APP_URL ?>#.php">
+            <i class="fa fa-fingerprint ni"></i><span class="nl">Absensi</span>
+            <?php if ($cnt_belum_absen): ?><span class="nc" style="background:#f59e0b;"><?= $cnt_belum_absen ?></span><?php endif; ?>
+          </a>
+        </div>
+      </div>
+    </details>
+
+    <!-- Master Data -->
     <details class="nav-group" <?= $grp_master ? 'open' : '' ?>>
       <summary class="nav-group-hd">
         <i class="fa fa-database ni-grp"></i><span>Master Data</span>
@@ -799,7 +958,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </div>
     </details>
 
-    <!-- ══ PENGATURAN (hanya Admin) ══ -->
+    <!-- Pengaturan -->
     <details class="nav-group" <?= $grp_setting ? 'open' : '' ?>>
       <summary class="nav-group-hd">
         <i class="fa fa-cog ni-grp"></i><span>Pengaturan</span>
@@ -807,7 +966,6 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </summary>
       <div class="nav-group-bd">
 
-        <!-- Notifikasi Telegram -->
         <div class="nav-item <?= ($active_menu??'')==='setting_telegram'?'active':'' ?>">
           <a href="<?= APP_URL ?>/pages/setting_telegram.php">
             <i class="fa fa-paper-plane ni" style="color:#0088cc;"></i>
@@ -821,14 +979,11 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
           </a>
         </div>
 
-        <!-- Backup Database — hanya Admin -->
         <div class="nav-item <?= ($active_menu??'')==='backup'?'active':'' ?>">
           <a href="<?= APP_URL ?>/pages/backup.php">
             <i class="fa fa-database ni" style="color:#26B99A;"></i>
             <span class="nl">Backup Database</span>
-            <?php
-            // Tampilkan dot hijau jika auto backup aktif
-            try {
+            <?php try {
               $bk_on = $pdo->query("SELECT value FROM settings WHERE `key`='backup_auto_enabled'")->fetchColumn();
               echo $bk_on=='1'
                 ? '<span style="width:7px;height:7px;border-radius:50%;background:#26B99A;display:inline-block;flex-shrink:0;box-shadow:0 0 6px #26B99A;" title="Auto Backup Aktif"></span>'
@@ -843,7 +998,8 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   <?php endif; ?>
 
   <!-- Profil (semua role) -->
-  <div class="nav-item <?= ($active_menu??'')==='profil'?'active':'' ?>" style="margin-top:4px;">
+  <div class="sb-divider"></div>
+  <div class="nav-item <?= ($active_menu??'')==='profil'?'active':'' ?>">
     <a href="<?= APP_URL ?>/pages/profil.php"><i class="fa fa-user-circle ni"></i><span class="nl">Profil Saya</span></a>
   </div>
 
@@ -893,6 +1049,13 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
     <?php if (hasRole(['admin','teknisi_ipsrs']) && $cnt_ipsrs_menunggu): ?>
     <a href="<?= APP_URL ?>/pages/antrian_ipsrs.php" class="tn-alert-pill">
       <i class="fa fa-bell"></i> <span><?= $cnt_ipsrs_menunggu ?> IPSRS</span>
+    </a>
+    <?php endif; ?>
+
+    <?php if (hasRole(['admin','hrd']) && $cnt_belum_absen): ?>
+    <a href="<?= APP_URL ?>/pages/absensi.php" class="tn-alert-pill" style="border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.07);color:#92400e;">
+      <i class="fa fa-fingerprint" style="color:#f59e0b;"></i>
+      <span><?= $cnt_belum_absen ?> belum absen</span>
     </a>
     <?php endif; ?>
 
@@ -1072,7 +1235,7 @@ window.addEventListener('resize', function() {
   }
 });
 
-function openModal(id) { const el = document.getElementById(id); if (el) { el.style.display='flex'; document.body.style.overflow='hidden'; } }
+function openModal(id)  { const el = document.getElementById(id); if (el) { el.style.display='flex'; document.body.style.overflow='hidden'; } }
 function closeModal(id) { const el = document.getElementById(id); if (el) { el.style.display='none'; document.body.style.overflow=''; } }
 document.addEventListener('click', function(e) { if (e.target && e.target.classList.contains('modal-ov')) closeModal(e.target.id); });
 document.addEventListener('keydown', function(e) { if (e.key==='Escape') document.querySelectorAll('.modal-ov').forEach(function(m) { if (m.style.display==='flex') closeModal(m.id); }); });
