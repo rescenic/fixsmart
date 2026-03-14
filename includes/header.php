@@ -649,7 +649,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
           <a href="<?= APP_URL ?>/pages/aset_it.php"><i class="fa fa-server ni"></i><span class="nl">Aset IT</span></a>
         </div>
         <div class="nav-item <?= ($active_menu??'')==='lacak_aset'?'active':'' ?>">
-          <a href="<?= APP_URL ?>#.php"><i class="fa fa-location-crosshairs ni"></i><span class="nl">Lacak Aset</span></a>
+          <a href="<?= APP_URL ?>/pages/lacak_aset_it.php"><i class="fa fa-location-crosshairs ni"></i><span class="nl">Lacak Aset</span></a>
         </div>
         <div class="nav-item <?= ($active_menu??'')==='mutasi_aset'?'active':'' ?>">
           <a href="<?= APP_URL ?>/pages/mutasi_aset.php">
@@ -848,7 +848,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
           <a href="<?= APP_URL ?>/pages/aset_it.php"><i class="fa fa-server ni"></i><span class="nl">Aset IT</span></a>
         </div>
         <div class="nav-item <?= ($active_menu??'')==='lacak_aset'?'active':'' ?>">
-          <a href="<?= APP_URL ?>#.php">
+          <a href="<?= APP_URL ?>/pages/lacak_aset_it.php">
             <i class="fa fa-location-crosshairs ni"></i><span class="nl">Lacak Aset</span>
           </a>
         </div>
