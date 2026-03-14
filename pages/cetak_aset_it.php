@@ -11,6 +11,21 @@ require_once $dompdf_path;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
+// ── Helper: Tanggal Indonesia (tanpa setlocale, aman di semua server) ─────────
+$BULAN_ID = [
+    1=>'Januari',2=>'Februari',3=>'Maret',4=>'April',
+    5=>'Mei',6=>'Juni',7=>'Juli',8=>'Agustus',
+    9=>'September',10=>'Oktober',11=>'November',12=>'Desember',
+];
+function tglId(string $raw, bool $withTime = false): string {
+    global $BULAN_ID;
+    $ts = strtotime($raw);
+    if (!$ts) return '-';
+    $str = (int)date('j',$ts).' '.($BULAN_ID[(int)date('n',$ts)]??'?').' '.date('Y',$ts);
+    if ($withTime) $str .= ', '.date('H:i',$ts);
+    return $str;
+}
+
 // ── Parameter ────────────────────────────────────────────────────────────────
 $mode         = $_GET['mode']         ?? 'semua';
 $kategori     = $_GET['kategori']     ?? '';
@@ -259,7 +274,7 @@ body {
   </div>
   <div class="report-no">
     Disiapkan oleh: <?= htmlspecialchars($_SESSION['user_nama'] ?? '-') ?>
-    &nbsp;|&nbsp; Dicetak: <?= date('d F Y, H:i') ?> WIB
+    &nbsp;|&nbsp; Dicetak: <?= tglId(date('Y-m-d H:i:s'), true) ?> WIB
   </div>
 </div>
 
@@ -269,7 +284,7 @@ body {
     <td class="di-label">Unit</td>
     <td class="di-val">Divisi Teknologi Informasi</td>
     <td class="di-label">Tanggal Cetak</td>
-    <td class="di-val"><?= date('d F Y, H:i') ?> WIB</td>
+    <td class="di-val"><?= tglId(date('Y-m-d H:i:s'), true) ?> WIB</td>
   </tr>
   <tr>
     <td class="di-label">Jenis Laporan</td>
@@ -299,10 +314,9 @@ body {
 </table>
 
 <?php if ($status_pakai === 'Tidak Terpakai'): ?>
-<!-- Banner peringatan filter tidak terpakai -->
 <div class="sp-filter-banner" style="background:#d1fae5;border:1px solid #86efac;">
   <div class="sp-filter-banner-l" style="color:#065f46;">
-    &#9679; LAPORAN KHUSUS: Aset Tidak Terpakai
+    &bull; LAPORAN KHUSUS: Aset Tidak Terpakai
   </div>
   <div class="sp-filter-banner-r" style="color:#065f46;">
     Total <?= $total_aset ?> unit aset yang saat ini tidak digunakan
@@ -311,7 +325,7 @@ body {
 <?php elseif ($status_pakai === 'Dipinjam'): ?>
 <div class="sp-filter-banner" style="background:#fef3c7;border:1px solid #fde68a;">
   <div class="sp-filter-banner-l" style="color:#92400e;">
-    &#9679; LAPORAN KHUSUS: Aset Sedang Dipinjam
+    &bull; LAPORAN KHUSUS: Aset Sedang Dipinjam
   </div>
   <div class="sp-filter-banner-r" style="color:#92400e;">
     Total <?= $total_aset ?> unit aset yang sedang dalam status dipinjam
@@ -555,7 +569,7 @@ $pct_tidak     = $total_aset > 0 ? round($jml_tidak    / $total_aset * 100) : 0;
 <?php else: foreach ($by_kat as $kat => $items): ?>
 
 <div class="kat-header">
-  <span class="kat-header-l">&#9654; <?= htmlspecialchars($kat) ?></span>
+  <span class="kat-header-l">&gt; <?= htmlspecialchars($kat) ?></span>
   <span class="kat-header-r"><?= count($items) ?> unit &nbsp;|&nbsp;
     Terpakai: <?= count(array_filter($items, fn($x) => ($x['status_pakai']??'') === 'Terpakai')) ?> &nbsp;
     Tidak Terpakai: <?= count(array_filter($items, fn($x) => ($x['status_pakai']??'') === 'Tidak Terpakai')) ?> &nbsp;
@@ -593,7 +607,6 @@ $pct_tidak     = $total_aset > 0 ? round($jml_tidak    / $total_aset * 100) : 0;
         : htmlspecialchars($a['lokasi'] ?? '—');
       $pj = $a['pj_nama_db'] ?: ($a['penanggung_jawab'] ?: '—');
 
-      // Row class untuk highlight
       $row_class = '';
       if ($sp === 'Tidak Terpakai') $row_class = 'row-tidak';
       elseif ($sp === 'Dipinjam')   $row_class = 'row-dipinjam';
@@ -606,7 +619,7 @@ $pct_tidak     = $total_aset > 0 ? round($jml_tidak    / $total_aset * 100) : 0;
           <?= htmlspecialchars($a['nama_aset'] ?? '—') ?>
         </strong>
         <?php if ($a['keterangan']): ?>
-          <br><span style="color:#94a3b8;font-size:7pt;"><?= htmlspecialchars(mb_strimwidth($a['keterangan'], 0, 45, '…')) ?></span>
+          <br><span style="color:#94a3b8;font-size:7pt;"><?= htmlspecialchars(mb_strimwidth($a['keterangan'], 0, 45, '...')) ?></span>
         <?php endif; ?>
       </td>
       <td>
@@ -622,19 +635,19 @@ $pct_tidak     = $total_aset > 0 ? round($jml_tidak    / $total_aset * 100) : 0;
         <div style="font-size:8pt;"><?= htmlspecialchars($pj) ?></div>
         <?php if ($a['pj_divisi']): ?><span style="color:#94a3b8;font-size:7pt;"><?= htmlspecialchars($a['pj_divisi']) ?></span><?php endif; ?>
       </td>
-      <!-- STATUS PAKAI -->
       <td>
         <span class="sp-badge" style="background:<?= $sstyle['bg'] ?>;color:<?= $sstyle['fg'] ?>;">
           <?= htmlspecialchars($sp) ?>
         </span>
       </td>
-      <!-- KONDISI -->
       <td>
         <span class="kondisi-badge" style="background:<?= $kstyle['bg'] ?>;color:<?= $kstyle['fg'] ?>;">
           <?= htmlspecialchars($a['kondisi'] ?? '—') ?>
         </span>
       </td>
-      <td style="font-size:7.5pt;color:#64748b;white-space:nowrap;"><?= $a['tanggal_beli'] ? date('d/m/Y', strtotime($a['tanggal_beli'])) : '—' ?></td>
+      <td style="font-size:7.5pt;color:#64748b;white-space:nowrap;">
+        <?= $a['tanggal_beli'] ? date('d/m/Y', strtotime($a['tanggal_beli'])) : '—' ?>
+      </td>
       <td style="font-size:7.5pt;white-space:nowrap;">
         <?php if (!$a['garansi_sampai']): ?><span style="color:#cbd5e1;">—</span>
         <?php elseif ($g_exp): ?><span style="color:#ef4444;font-weight:bold;">Expired</span><br><span style="color:#f87171;font-size:7pt;"><?= date('d/m/Y', strtotime($a['garansi_sampai'])) ?></span>
