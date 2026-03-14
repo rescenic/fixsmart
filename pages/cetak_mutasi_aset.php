@@ -11,6 +11,21 @@ require_once $dompdf_path;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
+// ── Helper: Tanggal Bahasa Indonesia ──────────────────────────────────────────
+$BULAN_ID = [
+    1=>'Januari', 2=>'Februari', 3=>'Maret', 4=>'April',
+    5=>'Mei', 6=>'Juni', 7=>'Juli', 8=>'Agustus',
+    9=>'September', 10=>'Oktober', 11=>'November', 12=>'Desember',
+];
+function tglIdM(string $raw, bool $withTime = false): string {
+    global $BULAN_ID;
+    $ts = strtotime($raw);
+    if (!$ts) return '—';
+    $str = (int)date('j',$ts) . ' ' . ($BULAN_ID[(int)date('n',$ts)] ?? '?') . ' ' . date('Y',$ts);
+    if ($withTime) $str .= ', ' . date('H:i', $ts);
+    return $str;
+}
+
 // ── Parameter Filter ─────────────────────────────────────────────────────────
 $mode         = $_GET['mode']         ?? 'semua';   // semua | periode | aset
 $dari         = $_GET['dari']         ?? date('Y-m-01');   // tgl awal
@@ -84,8 +99,8 @@ foreach ($list as $m) {
 }
 
 // ── Judul ─────────────────────────────────────────────────────────────────────
-$tgl_dari_fmt   = date('d F Y', strtotime($dari));
-$tgl_sampai_fmt = date('d F Y', strtotime($sampai));
+$tgl_dari_fmt   = tglIdM($dari);
+$tgl_sampai_fmt = tglIdM($sampai);
 $periode_label  = $dari === $sampai ? $tgl_dari_fmt : "$tgl_dari_fmt s/d $tgl_sampai_fmt";
 
 $judul_parts = ["Periode: $periode_label"];
@@ -279,7 +294,7 @@ body {
     <div class="report-sub"><?= implode(' &nbsp;&mdash;&nbsp; ', array_map('htmlspecialchars', $judul_parts)) ?></div>
     <div class="report-no">
         Disiapkan oleh: <?= htmlspecialchars($_SESSION['user_nama'] ?? '-') ?>
-        &nbsp;|&nbsp; Dicetak: <?= date('d F Y, H:i') ?> WIB
+        &nbsp;|&nbsp; Dicetak: <?= tglIdM(date('Y-m-d H:i:s'), true) ?> WIB
     </div>
 </div>
 
@@ -289,7 +304,7 @@ body {
         <td class="di-label">Unit</td>
         <td class="di-val">Divisi Teknologi Informasi</td>
         <td class="di-label">Tanggal Cetak</td>
-        <td class="di-val"><?= date('d F Y, H:i') ?> WIB</td>
+        <td class="di-val"><?= tglIdM(date('Y-m-d H:i:s'), true) ?> WIB</td>
     </tr>
     <tr>
         <td class="di-label">Jenis Laporan</td>
@@ -417,14 +432,14 @@ $top_bagian_n= $top_bagian ? $bagian_tujuan[$top_bagian] : 0;
         </td>
         <td class="kpi-td">
             <div class="kpi-card" style="border-top-color:#1d4ed8;background:#eff6ff;">
-                <div class="k-label">&#128205; Pindah Lokasi</div>
+                <div class="k-label">Pindah Lokasi</div>
                 <div class="k-val" style="color:#1d4ed8;"><?= $n_lok ?></div>
                 <div class="k-desc">Hanya perpindahan lokasi/bagian</div>
             </div>
         </td>
         <td class="kpi-td">
             <div class="kpi-card" style="border-top-color:#059669;background:#f0fdf4;">
-                <div class="k-label">&#128100; Pindah PIC</div>
+                <div class="k-label">Pindah PIC</div>
                 <div class="k-val" style="color:#059669;"><?= $n_pic ?></div>
                 <div class="k-desc">Hanya pergantian penanggung jawab</div>
             </div>
@@ -432,7 +447,7 @@ $top_bagian_n= $top_bagian ? $bagian_tujuan[$top_bagian] : 0;
         <td class="kpi-td" colspan="2">
             <?php if (!empty($bagian_tujuan)): ?>
             <div class="kpi-card" style="border-top-color:#0f766e;">
-                <div class="k-label">&#127942; Bagian Tujuan Terbanyak</div>
+                <div class="k-label">Top Bagian Tujuan</div>
                 <div style="font-size:12pt;font-weight:bold;color:#0f766e;line-height:1.2;margin-bottom:3px;">
                     <?= htmlspecialchars($top_bagian ?? '—') ?>
                 </div>
@@ -477,11 +492,12 @@ $top_bagian_n= $top_bagian ? $bagian_tujuan[$top_bagian] : 0;
             $na = count(array_unique(array_column(array_filter($items_b, fn($x) => $x['aset_id']), 'aset_id')));
             $nt = count($items_b);
             $pct = $total > 0 ? round($nt / $total * 100) : 0;
-            $bln_label = strftime('%B %Y', strtotime($bln . '-01')) ?: date('F Y', strtotime($bln . '-01'));
+            $ts_bln = strtotime($bln . '-01');
+            $bln_label = ($BULAN_ID[(int)date('n',$ts_bln)] ?? '?') . ' ' . date('Y',$ts_bln);
         ?>
         <tr>
             <td style="text-align:center;color:#94a3b8;"><?= $no_b ?></td>
-            <td style="font-weight:bold;"><?= date('F Y', strtotime($bln . '-01')) ?></td>
+            <td style="font-weight:bold;"><?php $ts2=strtotime($bln.'-01'); echo ($BULAN_ID[(int)date('n',$ts2)]??'?').' '.date('Y',$ts2); ?></td>
             <td style="text-align:center;font-weight:bold;"><?= $nt ?></td>
             <td style="text-align:center;color:#059669;font-weight:bold;"><?= $ns ?></td>
             <td style="text-align:center;color:#d97706;"><?= $nd ?></td>
@@ -574,14 +590,17 @@ elseif (!empty($bagian_tujuan) && count($bagian_tujuan) > 1) $sec_num_detail = '
     // Tampilkan per bulan jika multi-bulan, flat jika satu bulan
     $grouped = count($by_bulan) > 1 ? $by_bulan : ['Semua' => $list];
     foreach ($grouped as $bln_key => $items_grp):
-        $bln_label_disp = $bln_key === 'Semua' ? '' : date('F Y', strtotime($bln_key . '-01'));
+        $bln_label_disp = $bln_key === 'Semua' ? '' : (function($bln) use ($BULAN_ID) {
+            $ts = strtotime($bln . '-01');
+            return ($BULAN_ID[(int)date('n',$ts)] ?? '?') . ' ' . date('Y',$ts);
+        })($bln_key);
         $n_selesai_grp  = count(array_filter($items_grp, fn($x) => $x['status_mutasi'] === 'selesai'));
         $n_batal_grp    = count(array_filter($items_grp, fn($x) => $x['status_mutasi'] === 'batal'));
 ?>
 
 <?php if ($bln_key !== 'Semua'): ?>
 <div class="kat-header">
-    <span class="kat-header-l">&#128197; <?= htmlspecialchars($bln_label_disp) ?></span>
+    <span class="kat-header-l"><?= htmlspecialchars($bln_label_disp) ?></span>
     <span class="kat-header-r">
         <?= count($items_grp) ?> mutasi &nbsp;|&nbsp;
         Selesai: <?= $n_selesai_grp ?> &nbsp;
@@ -623,7 +642,7 @@ elseif (!empty($bagian_tujuan) && count($bagian_tujuan) > 1) $sec_num_detail = '
             <td style="text-align:center;color:#94a3b8;"><?= $no_item ?></td>
             <td><span class="no-mut-code"><?= htmlspecialchars($m['no_mutasi']) ?></span></td>
             <td style="font-size:7.5pt;color:#374151;white-space:nowrap;">
-                <?= date('d/m/Y', strtotime($m['tanggal_mutasi'])) ?>
+                <?= tglIdM($m['tanggal_mutasi']) ?>
                 <br><span style="color:#94a3b8;"><?= date('H:i', strtotime($m['created_at'])) ?></span>
             </td>
             <td style="text-align:center;">
