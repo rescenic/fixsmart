@@ -1248,7 +1248,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       <div class="fs-logo-badge">FS</div>
       <div style="flex:1;min-width:0;">
         <div class="fs-btn-label">FixSmart</div>
-        <div class="fs-btn-sub">v1.0.0 &mdash; Tentang Aplikasi</div>
+        <div class="fs-btn-sub">v1.0.0 &mdash; Tentang Applikasi</div>
       </div>
       <i class="fa fa-chevron-right fs-chevron"></i>
     </button>
