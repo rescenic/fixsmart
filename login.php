@@ -67,12 +67,14 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 $log_new_ip=isNewIPForUser($pdo,(int)$user['id'],$log_ip);
                 recordLoginLog($pdo,['user_id'=>$user['id'],'username_input'=>$u,'status'=>'berhasil','ip_address'=>$log_ip,'user_agent'=>$log_ua,'device_type'=>$log_parsed['device'],'browser'=>$log_parsed['browser'],'os'=>$log_parsed['os'],'keterangan'=>null,'is_new_ip'=>$log_new_ip?1:0]);
                 resetAttempts(); session_regenerate_id(true);
-                $_SESSION['user_id']    = $user['id'];
-                $_SESSION['user_nama']  = $user['nama'];
-                $_SESSION['user_role']  = $user['role'];
-                $_SESSION['user_divisi']= $user['divisi'];
+                $_SESSION['user_id']       = $user['id'];
+                $_SESSION['user_nama']     = $user['nama'];
+                $_SESSION['user_role']     = $user['role'];
+                $_SESSION['user_divisi']   = $user['divisi'];
+                $_SESSION['pokja_id']      = $user['pokja_id']      ?? null;   // ← untuk akreditasi
+                $_SESSION['is_akreditasi'] = (int)($user['is_akreditasi'] ?? 0); // ← dual role
                 $_SESSION['last_activity'] = time();
-                $_SESSION['login_ip']   = $log_ip;
+                $_SESSION['login_ip']      = $log_ip;
                 unset($_SESSION['csrf_token'],$_SESSION['captcha_answer'],$_SESSION['captcha_soal']);
                 if($log_new_ip) setFlash('warning','<i class="fa fa-shield-halved"></i> Login dari perangkat/lokasi baru terdeteksi <strong>('.htmlspecialchars($log_ip).')</strong>. Jika bukan Anda, segera hubungi administrator.');
                 redirect(APP_URL.'/dashboard.php');
@@ -198,7 +200,6 @@ $attempts_data=getAttempts(); $is_locked=isLocked(); $sisa_coba=remainingAttempt
   .alert-danger { background: rgba(255,77,109,0.1); border: 1px solid rgba(255,77,109,0.25); color: #ff8099; }
   .alert-info   { background: rgba(0,229,176,0.08); border: 1px solid rgba(0,229,176,0.2);  color: var(--teal); }
 
-  /* lockout */
   .lockout-box { text-align: center; padding: 40px 24px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); }
   .lc-icon  { font-size: 48px; color: var(--danger); margin-bottom: 16px; animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.5; } }
@@ -206,7 +207,6 @@ $attempts_data=getAttempts(); $is_locked=isLocked(); $sisa_coba=remainingAttempt
   .lc-timer { font-family:'Syne',sans-serif; font-size: 48px; font-weight: 800; color: var(--teal); letter-spacing: -2px; margin: 8px 0; }
   .lc-sub   { font-size: 13px; color: var(--muted); }
 
-  /* attempts */
   .attempts-wrap { margin-bottom: 18px; }
   .attempts-info { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
   .attempts-info strong { color: var(--text); }
@@ -215,7 +215,6 @@ $attempts_data=getAttempts(); $is_locked=isLocked(); $sisa_coba=remainingAttempt
   .att-dot.warn { background: var(--warn); }
   .att-dot.used { background: var(--danger); }
 
-  /* form fields */
   .fg { margin-bottom: 16px; }
   .fg label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; margin-bottom: 7px; }
   .iw { position: relative; }
@@ -226,7 +225,6 @@ $attempts_data=getAttempts(); $is_locked=isLocked(); $sisa_coba=remainingAttempt
   .eye { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px; font-size: 14px; transition: color .2s; }
   .eye:hover { color: var(--teal); }
 
-  /* captcha */
   .captcha-box { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
   .captcha-label { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; margin-bottom: 10px; }
   .captcha-label i { color: var(--teal); margin-right: 4px; }
@@ -333,7 +331,6 @@ $attempts_data=getAttempts(); $is_locked=isLocked(); $sisa_coba=remainingAttempt
       <?php endif; ?>
 
       <?php if($is_locked): ?>
-      <!-- LOCKOUT -->
       <div class="lockout-box">
         <div class="lc-icon"><i class="fa fa-lock"></i></div>
         <div class="lc-title">Akun Sementara Dikunci</div>

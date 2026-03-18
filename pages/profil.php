@@ -6,13 +6,12 @@ requireLogin();
 
 $page_title  = 'Profil Saya';
 $active_menu = 'profil';
-$divs        = getBagianList($pdo);
 
 $st = $pdo->prepare("SELECT * FROM users WHERE id=?");
 $st->execute([$_SESSION['user_id']]);
 $user = $st->fetch();
 
-// ── Pastikan tabel sdm_karyawan ada ──────────────────────
+// ── Pastikan tabel sdm_karyawan ada & kolom lengkap ──────────────────────────
 try {
     $pdo->exec("CREATE TABLE IF NOT EXISTS `sdm_karyawan` (
       `id`                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -28,11 +27,17 @@ try {
       `agama`               VARCHAR(30)  DEFAULT NULL,
       `status_pernikahan`   VARCHAR(30)  DEFAULT NULL,
       `jumlah_anak`         TINYINT UNSIGNED DEFAULT 0,
+      `kewarganegaraan`     VARCHAR(30)  DEFAULT 'WNI',
+      `suku`                VARCHAR(50)  DEFAULT NULL,
+      `no_ktp`              VARCHAR(20)  DEFAULT NULL,
       `no_hp`               VARCHAR(20)  DEFAULT NULL,
       `no_hp_darurat`       VARCHAR(20)  DEFAULT NULL,
       `kontak_darurat`      VARCHAR(100) DEFAULT NULL,
       `hubungan_darurat`    VARCHAR(50)  DEFAULT NULL,
+      `email_pribadi`       VARCHAR(150) DEFAULT NULL,
       `alamat_ktp`          TEXT         DEFAULT NULL,
+      `kelurahan_ktp`       VARCHAR(100) DEFAULT NULL,
+      `kecamatan_ktp`       VARCHAR(100) DEFAULT NULL,
       `kota_ktp`            VARCHAR(100) DEFAULT NULL,
       `provinsi_ktp`        VARCHAR(100) DEFAULT NULL,
       `kode_pos_ktp`        VARCHAR(10)  DEFAULT NULL,
@@ -43,6 +48,8 @@ try {
       `universitas`         VARCHAR(150) DEFAULT NULL,
       `tahun_lulus`         YEAR         DEFAULT NULL,
       `jabatan_id`          INT UNSIGNED DEFAULT NULL,
+      `divisi`              VARCHAR(100) DEFAULT NULL,
+      `unit_kerja`          VARCHAR(100) DEFAULT NULL,
       `jenis_karyawan`      VARCHAR(30)  DEFAULT NULL,
       `jenis_tenaga`        VARCHAR(100) DEFAULT NULL,
       `status_kepegawaian`  VARCHAR(30)  DEFAULT 'Tetap',
@@ -65,29 +72,45 @@ try {
       `no_sik`              VARCHAR(100) DEFAULT NULL,
       `tgl_exp_sik`         DATE         DEFAULT NULL,
       `spesialisasi`        VARCHAR(150) DEFAULT NULL,
+      `sub_spesialisasi`    VARCHAR(150) DEFAULT NULL,
       `kompetensi`          TEXT         DEFAULT NULL,
-      `status`              VARCHAR(20)  DEFAULT 'aktif',
+      `status`              ENUM('aktif','nonaktif','cuti','resign','pensiun') DEFAULT 'aktif',
+      `tgl_resign`          DATE         DEFAULT NULL,
+      `alasan_resign`       TEXT         DEFAULT NULL,
       `catatan`             TEXT         DEFAULT NULL,
+      `foto`                VARCHAR(255) DEFAULT NULL,
       `updated_by`          INT UNSIGNED DEFAULT NULL,
       `created_at`          DATETIME     DEFAULT CURRENT_TIMESTAMP,
-      `updated_at`          DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      KEY `idx_user_id` (`user_id`)
+      `updated_at`          DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 } catch (Exception $e) {}
 
-// Tambah kolom baru jika belum ada (upgrade DB lama)
-foreach ([
+// Upgrade kolom jika belum ada (backward compat)
+$alter_cols = [
+    "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `kewarganegaraan` VARCHAR(30) DEFAULT 'WNI' AFTER `jumlah_anak`",
+    "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `suku` VARCHAR(50) DEFAULT NULL AFTER `kewarganegaraan`",
+    "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `no_ktp` VARCHAR(20) DEFAULT NULL AFTER `suku`",
+    "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `email_pribadi` VARCHAR(150) DEFAULT NULL AFTER `hubungan_darurat`",
+    "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `kelurahan_ktp` VARCHAR(100) DEFAULT NULL AFTER `alamat_ktp`",
+    "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `kecamatan_ktp` VARCHAR(100) DEFAULT NULL AFTER `kelurahan_ktp`",
     "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `kota_domisili` VARCHAR(100) DEFAULT NULL AFTER `alamat_domisili`",
+    "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `divisi` VARCHAR(100) DEFAULT NULL AFTER `jabatan_id`",
+    "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `unit_kerja` VARCHAR(100) DEFAULT NULL AFTER `divisi`",
+    "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `sub_spesialisasi` VARCHAR(150) DEFAULT NULL AFTER `spesialisasi`",
     "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `tgl_terbit_str` DATE DEFAULT NULL AFTER `no_str`",
     "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `tgl_terbit_sip` DATE DEFAULT NULL AFTER `no_sip`",
-] as $sql) { try { $pdo->exec($sql); } catch (Exception $e) {} }
+    "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `tgl_resign` DATE DEFAULT NULL AFTER `catatan`",
+    "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `alasan_resign` TEXT DEFAULT NULL AFTER `tgl_resign`",
+    "ALTER TABLE sdm_karyawan ADD COLUMN IF NOT EXISTS `sub_spesialisasi` VARCHAR(150) DEFAULT NULL AFTER `spesialisasi`",
+];
+foreach ($alter_cols as $sql) { try { $pdo->exec($sql); } catch (Exception $e) {} }
 
-// ── Ambil data SDM milik user ini ────────────────────────
+// ── Ambil data SDM milik user ini ────────────────────────────────────────────
 $sdmSt = $pdo->prepare("SELECT * FROM sdm_karyawan WHERE user_id=? LIMIT 1");
 $sdmSt->execute([$_SESSION['user_id']]);
 $sdm = $sdmSt->fetch(PDO::FETCH_ASSOC) ?: [];
 
-// ── OPTIONS ──────────────────────────────────────────────
+// ── OPTIONS ──────────────────────────────────────────────────────────────────
 $opt_agama      = ['Islam','Kristen Protestan','Kristen Katolik','Hindu','Buddha','Konghucu'];
 $opt_gol_darah  = ['A','B','AB','O','A+','A-','B+','B-','AB+','AB-','O+','O-'];
 $opt_status_nik = ['Belum Menikah','Menikah','Cerai Hidup','Cerai Mati'];
@@ -99,7 +122,10 @@ $opt_bank       = ['BRI','BNI','BCA','Mandiri','BTN','CIMB Niaga','Danamon','Per
 $jabatan_list = [];
 try { $jabatan_list = $pdo->query("SELECT id,nama,kode FROM jabatan WHERE status='aktif' ORDER BY level,urutan,nama")->fetchAll(); } catch (Exception $e) {}
 
-// Helper: tampilkan nilai SDM dari $sdm array
+$divs = [];
+try { $divs = $pdo->query("SELECT nama,kode FROM bagian WHERE status='aktif' ORDER BY urutan,nama")->fetchAll(); } catch (Exception $e) {}
+
+// Helper functions
 function sdmVal(array $sdm, string $key, $default = ''): string {
     $v = $sdm[$key] ?? $default;
     return htmlspecialchars((string)($v ?? $default));
@@ -113,19 +139,18 @@ function sdmDate(array $sdm, string $key): string {
     return '';
 }
 
-// ── POST HANDLER ─────────────────────────────────────────
+// ── POST HANDLER ──────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $act = $_POST['action'] ?? '';
 
-    // ── Update profil dasar ──
+    // ── Update profil dasar (nama & email saja) ──────────────────────────────
     if ($act === 'profil') {
-        $n  = trim($_POST['nama']  ?? '');
-        $e  = trim($_POST['email'] ?? '');
-        $d  = $_POST['divisi']     ?? '';
-        $hp = trim($_POST['no_hp'] ?? '');
+        $n = trim($_POST['nama']  ?? '');
+        $e = trim($_POST['email'] ?? '');
+        // divisi & no_hp dikelola lewat tab Data Kepegawaian agar sinkron dengan SDM
         if ($n && $e) {
-            $pdo->prepare("UPDATE users SET nama=?,email=?,divisi=?,no_hp=? WHERE id=?")
-                ->execute([$n, $e, $d, $hp, $_SESSION['user_id']]);
+            $pdo->prepare("UPDATE users SET nama=?,email=? WHERE id=?")
+                ->execute([$n, $e, $_SESSION['user_id']]);
             $_SESSION['user_nama'] = $n;
             setFlash('success', 'Profil berhasil diperbarui.');
         } else {
@@ -133,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // ── Ganti password ──
+    // ── Ganti password ───────────────────────────────────────────────────────
     if ($act === 'password') {
         $old = $_POST['old'] ?? '';
         $new = $_POST['new'] ?? '';
@@ -151,58 +176,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // ── Simpan data SDM mandiri ──
+    // ── Simpan data SDM mandiri ──────────────────────────────────────────────
     if ($act === 'simpan_sdm') {
         $uid = (int)$_SESSION['user_id'];
 
-        $fields_text  = ['nik_ktp','nik_rs','gelar_depan','gelar_belakang','tempat_lahir','kota_ktp',
-                         'provinsi_ktp','kode_pos_ktp','jurusan','universitas','jenis_tenaga',
-                         'no_bpjs_kes','no_bpjs_tk','no_npwp','no_rekening','bank','atas_nama_rek',
-                         'no_str','no_sip','no_sik','spesialisasi','no_hp','no_hp_darurat',
-                         'kontak_darurat','hubungan_darurat','kota_domisili'];
-        $fields_text2 = ['alamat_ktp','alamat_domisili','kompetensi','catatan'];
-        $fields_enum  = ['jenis_kelamin','golongan_darah','agama','status_pernikahan',
-                         'pendidikan_terakhir','jenis_karyawan','status_kepegawaian'];
-        $fields_date  = ['tgl_lahir','tgl_masuk','tgl_kontrak_mulai','tgl_kontrak_selesai',
-                         'tgl_pengangkatan','tgl_terbit_str','tgl_exp_str',
-                         'tgl_terbit_sip','tgl_exp_sip','tgl_exp_sik'];
-        $fields_int   = ['jabatan_id','jumlah_anak','tahun_lulus'];
+        try {
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-        $d = [];
-        foreach ($fields_text  as $f) $d[$f] = trim($_POST[$f] ?? '') ?: null;
-        foreach ($fields_text2 as $f) $d[$f] = trim($_POST[$f] ?? '') ?: null;
-        foreach ($fields_enum  as $f) { $d[$f] = $_POST[$f] ?? null; if (!$d[$f]) $d[$f] = null; }
-        foreach ($fields_date  as $f) $d[$f] = ($_POST[$f] ?? '') ?: null;
-        foreach ($fields_int   as $f) $d[$f] = (int)($_POST[$f] ?? 0) ?: null;
-        $d['updated_by'] = $uid;
+            // Field sesuai kolom tabel sdm_karyawan yang sebenarnya
+            $fields_text = [
+                'nik_ktp','nik_rs','gelar_depan','gelar_belakang','tempat_lahir',
+                'kewarganegaraan','suku',
+                'no_hp','no_hp_darurat','kontak_darurat','hubungan_darurat',
+                'kelurahan_ktp','kecamatan_ktp','kota_ktp','provinsi_ktp','kode_pos_ktp',
+                'kota_domisili','jurusan','universitas',
+                'divisi','unit_kerja',
+                'jenis_tenaga','spesialisasi','sub_spesialisasi',
+                'no_bpjs_kes','no_bpjs_tk','no_npwp',
+                'no_rekening','bank','atas_nama_rek',
+                'no_str','no_sip','no_sik',
+                'alasan_resign',
+            ];
+            $fields_text2 = ['alamat_ktp','alamat_domisili','kompetensi','catatan'];
+            $fields_enum  = ['jenis_kelamin','golongan_darah','agama','status_pernikahan',
+                             'pendidikan_terakhir','jenis_karyawan','status_kepegawaian'];
+            $fields_date  = ['tgl_lahir','tgl_masuk','tgl_kontrak_mulai','tgl_kontrak_selesai',
+                             'tgl_pengangkatan','tgl_terbit_str','tgl_exp_str',
+                             'tgl_terbit_sip','tgl_exp_sip','tgl_exp_sik','tgl_resign'];
+            $fields_int   = ['jabatan_id','jumlah_anak','tahun_lulus'];
 
-        // Cek sudah ada record?
-        $ex = $pdo->prepare("SELECT id FROM sdm_karyawan WHERE user_id=?");
-        $ex->execute([$uid]);
-        if ($ex->fetchColumn()) {
-            $sets = implode(',', array_map(fn($k) => "`$k`=?", array_keys($d)));
-            $vals = array_values($d);
-            $vals[] = $uid;
-            $pdo->prepare("UPDATE sdm_karyawan SET $sets WHERE user_id=?")->execute($vals);
-        } else {
-            $d['user_id'] = $uid;
-            $cols = implode(',', array_map(fn($k) => "`$k`", array_keys($d)));
-            $phs  = implode(',', array_fill(0, count($d), '?'));
-            $pdo->prepare("INSERT INTO sdm_karyawan ($cols) VALUES ($phs)")->execute(array_values($d));
+            $d = [];
+            foreach ($fields_text  as $f) $d[$f] = trim($_POST[$f] ?? '') ?: null;
+            foreach ($fields_text2 as $f) $d[$f] = trim($_POST[$f] ?? '') ?: null;
+            foreach ($fields_enum  as $f) { $v = trim($_POST[$f] ?? ''); $d[$f] = $v !== '' ? $v : null; }
+            foreach ($fields_date  as $f) { $v = trim($_POST[$f] ?? ''); $d[$f] = $v !== '' ? $v : null; }
+            foreach ($fields_int   as $f) { $v = (int)($_POST[$f] ?? 0); $d[$f] = $v > 0 ? $v : null; }
+            $d['updated_by'] = $uid;
+
+            // INSERT atau UPDATE sdm_karyawan
+            $ex = $pdo->prepare("SELECT id FROM sdm_karyawan WHERE user_id=?");
+            $ex->execute([$uid]);
+            if ($ex->fetchColumn()) {
+                $sets = implode(',', array_map(fn($k) => "`$k`=?", array_keys($d)));
+                $vals = array_values($d);
+                $vals[] = $uid;
+                $pdo->prepare("UPDATE sdm_karyawan SET $sets WHERE user_id=?")->execute($vals);
+            } else {
+                $d['user_id'] = $uid;
+                $cols = implode(',', array_map(fn($k) => "`$k`", array_keys($d)));
+                $phs  = implode(',', array_fill(0, count($d), '?'));
+                $pdo->prepare("INSERT INTO sdm_karyawan ($cols) VALUES ($phs)")->execute(array_values($d));
+            }
+
+            // Sync no_hp dan divisi ke tabel users
+            if (!empty($d['no_hp'])) {
+                $pdo->prepare("UPDATE users SET no_hp=? WHERE id=?")->execute([$d['no_hp'], $uid]);
+                $_SESSION['user_no_hp'] = $d['no_hp'];
+            }
+            if (!empty($d['divisi'])) {
+                $pdo->prepare("UPDATE users SET divisi=? WHERE id=?")->execute([$d['divisi'], $uid]);
+                $_SESSION['user_divisi'] = $d['divisi'];
+            }
+
+            setFlash('success', 'Data kepegawaian berhasil disimpan.');
+
+        } catch (Exception $e) {
+            error_log('profil simpan_sdm error: ' . $e->getMessage());
+            setFlash('danger', 'Gagal menyimpan: ' . htmlspecialchars($e->getMessage()));
         }
-
-        // Sync no_hp ke tabel users
-        if ($d['no_hp']) {
-            $pdo->prepare("UPDATE users SET no_hp=? WHERE id=?")->execute([$d['no_hp'], $uid]);
-        }
-
-        setFlash('success', 'Data kepegawaian berhasil disimpan.');
     }
 
     redirect(APP_URL . '/pages/profil.php');
 }
 
-// Reload user & SDM setelah redirect
+// Reload data setelah redirect
 $st->execute([$_SESSION['user_id']]);
 $user = $st->fetch();
 $sdmSt->execute([$_SESSION['user_id']]);
@@ -223,149 +270,36 @@ include '../includes/header.php';
 ?>
 
 <style>
-/* ═══════════════════════════════════════
-   PROFIL PAGE — EXTRA STYLES
-═══════════════════════════════════════ */
 .prf-wrap { display:grid; grid-template-columns:260px 1fr; gap:18px; align-items:start; }
-
-/* Kartu kiri */
-.prf-card {
-  background:#fff;
-  border:1px solid #e5e7eb;
-  border-radius:14px;
-  overflow:hidden;
-  position:sticky;
-  top:20px;
-}
-.prf-card-top {
-  background:linear-gradient(135deg,#0a0f14 0%,#1a2535 100%);
-  padding:28px 20px 20px;
-  text-align:center;
-  position:relative;
-}
-.prf-card-top::after {
-  content:'';
-  position:absolute;
-  bottom:-1px; left:0; right:0;
-  height:24px;
-  background:#fff;
-  border-radius:24px 24px 0 0;
-}
-.prf-av {
-  width:72px; height:72px;
-  border-radius:50%;
-  background:linear-gradient(135deg,#00e5b0,#00c896);
-  color:#0a0f14;
-  font-size:24px; font-weight:800;
-  display:flex; align-items:center; justify-content:center;
-  margin:0 auto 12px;
-  border:3px solid rgba(255,255,255,.15);
-  box-shadow:0 8px 24px rgba(0,200,150,.3);
-}
-.prf-nama {
-  font-size:15px; font-weight:700;
-  color:#fff; line-height:1.3;
-  margin-bottom:4px;
-  position:relative;z-index:1;
-}
-.prf-email { font-size:11.5px; color:#9ca3af; position:relative;z-index:1; }
-.prf-role-badge {
-  display:inline-flex;align-items:center;gap:5px;
-  font-size:11px; font-weight:700;
-  padding:3px 10px; border-radius:20px;
-  margin-top:8px;
-  position:relative;z-index:1;
-}
+.prf-card { background:#fff; border:1px solid #e5e7eb; border-radius:14px; overflow:hidden; position:sticky; top:20px; }
+.prf-card-top { background:linear-gradient(135deg,#0a0f14 0%,#1a2535 100%); padding:28px 20px 20px; text-align:center; position:relative; }
+.prf-card-top::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:24px; background:#fff; border-radius:24px 24px 0 0; }
+.prf-av { width:72px; height:72px; border-radius:50%; background:linear-gradient(135deg,#00e5b0,#00c896); color:#0a0f14; font-size:24px; font-weight:800; display:flex; align-items:center; justify-content:center; margin:0 auto 12px; border:3px solid rgba(255,255,255,.15); box-shadow:0 8px 24px rgba(0,200,150,.3); }
+.prf-nama { font-size:15px; font-weight:700; color:#fff; line-height:1.3; margin-bottom:4px; position:relative; z-index:1; }
+.prf-email { font-size:11.5px; color:#9ca3af; position:relative; z-index:1; }
+.prf-role-badge { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; margin-top:8px; position:relative; z-index:1; }
 .prf-card-info { padding:16px 18px; }
-.prf-info-row {
-  display:flex; align-items:center; gap:8px;
-  padding:7px 0;
-  border-bottom:1px solid #f3f4f6;
-  font-size:12px;
-}
+.prf-info-row { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid #f3f4f6; font-size:12px; }
 .prf-info-row:last-child { border-bottom:none; }
-.prf-info-row .prf-info-icon {
-  width:28px; height:28px;
-  border-radius:7px;
-  background:#f0fdf4;
-  color:#00c896;
-  display:flex; align-items:center; justify-content:center;
-  font-size:11px; flex-shrink:0;
-}
+.prf-info-icon { width:28px; height:28px; border-radius:7px; background:#f0fdf4; color:#00c896; display:flex; align-items:center; justify-content:center; font-size:11px; flex-shrink:0; }
 .prf-info-lbl { font-size:10px; color:#9ca3af; line-height:1; }
 .prf-info-val { font-size:12px; font-weight:600; color:#111827; margin-top:1px; }
-
-/* Progress kelengkapan */
 .prf-progress-wrap { padding:14px 18px; border-top:1px solid #f3f4f6; }
 .prf-progress-label { display:flex; justify-content:space-between; font-size:11px; margin-bottom:6px; }
-.prf-progress-label span:first-child { color:#6b7280; font-weight:600; }
-.prf-progress-label span:last-child  { color:#00c896; font-weight:700; }
-.prf-progress-bar {
-  height:6px; border-radius:99px;
-  background:#e5e7eb;
-  overflow:hidden;
-}
-.prf-progress-fill {
-  height:100%; border-radius:99px;
-  background:linear-gradient(90deg,#00e5b0,#00c896);
-  transition:width .6s ease;
-}
-
-/* Statistik tiket */
-.prf-stat-grid {
-  display:grid; grid-template-columns:1fr 1fr;
-  gap:8px;
-  padding:14px 18px;
-  border-top:1px solid #f3f4f6;
-}
-.prf-stat-item {
-  background:#f9fafb; border-radius:8px;
-  padding:10px 12px; text-align:center;
-}
+.prf-progress-bar { height:6px; border-radius:99px; background:#e5e7eb; overflow:hidden; }
+.prf-progress-fill { height:100%; border-radius:99px; background:linear-gradient(90deg,#00e5b0,#00c896); transition:width .6s ease; }
+.prf-stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:14px 18px; border-top:1px solid #f3f4f6; }
+.prf-stat-item { background:#f9fafb; border-radius:8px; padding:10px 12px; text-align:center; }
 .prf-stat-num { font-size:20px; font-weight:800; line-height:1; }
 .prf-stat-lbl { font-size:10px; color:#9ca3af; font-weight:500; margin-top:3px; }
-
-/* Panel kanan — tabs */
-.prf-panel {
-  background:#fff;
-  border:1px solid #e5e7eb;
-  border-radius:14px;
-  overflow:hidden;
-}
-.prf-tabs {
-  display:flex;
-  border-bottom:2px solid #e5e7eb;
-  background:#fafafa;
-  overflow-x:auto;
-  flex-shrink:0;
-}
-.prf-tab {
-  padding:12px 18px;
-  font-size:12px; font-weight:600;
-  color:#6b7280;
-  border:none; background:none;
-  cursor:pointer;
-  white-space:nowrap;
-  border-bottom:2px solid transparent;
-  margin-bottom:-2px;
-  transition:all .15s;
-  display:flex; align-items:center; gap:6px;
-}
+.prf-panel { background:#fff; border:1px solid #e5e7eb; border-radius:14px; overflow:hidden; }
+.prf-tabs { display:flex; border-bottom:2px solid #e5e7eb; background:#fafafa; overflow-x:auto; flex-shrink:0; }
+.prf-tab { padding:12px 18px; font-size:12px; font-weight:600; color:#6b7280; border:none; background:none; cursor:pointer; white-space:nowrap; border-bottom:2px solid transparent; margin-bottom:-2px; transition:all .15s; display:flex; align-items:center; gap:6px; }
 .prf-tab.active { color:#00c896; border-bottom-color:#00c896; }
 .prf-tab:hover:not(.active) { color:#374151; background:#f3f4f6; }
 .prf-tab-pane { display:none; padding:22px 24px; }
 .prf-tab-pane.active { display:block; }
-
-/* Form styling konsisten */
-.prf-sec {
-  font-size:10px; font-weight:700;
-  color:#00c896; letter-spacing:1.2px;
-  text-transform:uppercase;
-  margin:18px 0 10px;
-  padding-bottom:6px;
-  border-bottom:1px solid #e5e7eb;
-  display:flex; align-items:center; gap:6px;
-}
+.prf-sec { font-size:10px; font-weight:700; color:#00c896; letter-spacing:1.2px; text-transform:uppercase; margin:18px 0 10px; padding-bottom:6px; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; gap:6px; }
 .prf-sec:first-child { margin-top:0; }
 .prf-g2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
 .prf-g3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
@@ -374,69 +308,20 @@ include '../includes/header.php';
 .prf-fg label { font-size:11px; font-weight:600; color:#374151; }
 .prf-fg label .opt { font-size:9.5px; color:#9ca3af; font-weight:400; }
 .prf-fg .req { color:#ef4444; }
-.prf-fg input,
-.prf-fg select,
-.prf-fg textarea {
-  border:1px solid #d1d5db;
-  border-radius:8px;
-  padding:0 11px;
-  font-size:12.5px;
-  font-family:inherit;
-  background:#f9fafb;
-  color:#111827;
-  transition:border-color .15s, background .15s, box-shadow .15s;
-  box-sizing:border-box;
-  width:100%;
-}
+.prf-fg input, .prf-fg select, .prf-fg textarea { border:1px solid #d1d5db; border-radius:8px; padding:0 11px; font-size:12.5px; font-family:inherit; background:#f9fafb; color:#111827; transition:border-color .15s,background .15s,box-shadow .15s; box-sizing:border-box; width:100%; }
 .prf-fg input, .prf-fg select { height:36px; }
 .prf-fg textarea { padding:8px 11px; resize:vertical; min-height:60px; }
-.prf-fg input:focus,
-.prf-fg select:focus,
-.prf-fg textarea:focus {
-  outline:none;
-  border-color:#00c896;
-  background:#fff;
-  box-shadow:0 0 0 3px rgba(0,200,150,.1);
-}
-
-/* Info box SDM */
-.prf-info-box {
-  background:linear-gradient(135deg,#f0fdf4,#ecfdf5);
-  border:1px solid #bbf7d0;
-  border-radius:10px;
-  padding:12px 16px;
-  margin-bottom:18px;
-  font-size:12px;
-  color:#065f46;
-  display:flex; align-items:flex-start; gap:10px;
-}
-.prf-info-box i { font-size:14px; margin-top:1px; flex-shrink:0; }
-
-/* Readonly field */
-.prf-fg input[readonly] {
-  background:#f3f4f6;
-  color:#9ca3af;
-  cursor:not-allowed;
-}
-
-/* Save button row */
-.prf-save-row {
-  display:flex; align-items:center; justify-content:flex-end;
-  gap:10px;
-  padding:16px 24px;
-  border-top:1px solid #e5e7eb;
-  background:#fafafa;
-}
-
-@media(max-width:900px) {
-  .prf-wrap { grid-template-columns:1fr; }
-  .prf-card { position:static; }
-  .prf-g2,.prf-g3,.prf-g4 { grid-template-columns:1fr 1fr; }
-}
-@media(max-width:560px) {
-  .prf-g2,.prf-g3,.prf-g4 { grid-template-columns:1fr; }
-  .prf-tab-pane { padding:16px; }
-}
+.prf-fg input:focus, .prf-fg select:focus, .prf-fg textarea:focus { outline:none; border-color:#00c896; background:#fff; box-shadow:0 0 0 3px rgba(0,200,150,.1); }
+.prf-fg input[readonly] { background:#f3f4f6; color:#9ca3af; cursor:not-allowed; }
+.prf-info-box { background:linear-gradient(135deg,#f0fdf4,#ecfdf5); border:1px solid #bbf7d0; border-radius:10px; padding:12px 16px; margin-bottom:18px; font-size:12px; color:#065f46; display:flex; align-items:flex-start; gap:10px; }
+.prf-save-row { display:flex; align-items:center; justify-content:flex-end; gap:10px; padding:16px 24px; border-top:1px solid #e5e7eb; background:#fafafa; }
+.sdm-subtab { padding:8px 14px; font-size:11.5px; font-weight:600; color:#6b7280; border:none; background:none; cursor:pointer; white-space:nowrap; border-bottom:2px solid transparent; margin-bottom:-1px; transition:all .15s; display:inline-flex; align-items:center; gap:5px; }
+.sdm-subtab.active { color:#00c896; border-bottom-color:#00c896; background:#f0fdf4; border-radius:6px 6px 0 0; }
+.sdm-subtab:hover:not(.active) { color:#374151; background:#f9fafb; }
+.sdm-subpane { display:none; }
+.sdm-subpane.active { display:block; }
+@media(max-width:900px) { .prf-wrap { grid-template-columns:1fr; } .prf-card { position:static; } .prf-g2,.prf-g3,.prf-g4 { grid-template-columns:1fr 1fr; } }
+@media(max-width:560px) { .prf-g2,.prf-g3,.prf-g4 { grid-template-columns:1fr; } .prf-tab-pane { padding:16px; } }
 </style>
 
 <div class="page-header">
@@ -453,28 +338,34 @@ include '../includes/header.php';
 
   <div class="prf-wrap">
 
-    <!-- ══ KOLOM KIRI: Kartu Profil ══ -->
+    <!-- ══ KARTU KIRI ══ -->
     <div>
       <div class="prf-card">
-        <!-- Atas: avatar + nama -->
         <div class="prf-card-top">
           <div class="prf-av"><?= getInitials($user['nama']) ?></div>
-          <div class="prf-nama"><?= htmlspecialchars(($sdm['gelar_depan'] ?? '') ? $sdm['gelar_depan'].' '.clean($user['nama']) : clean($user['nama'])) ?><?= !empty($sdm['gelar_belakang']) ? ', '.$sdm['gelar_belakang'] : '' ?></div>
+          <div class="prf-nama">
+            <?= htmlspecialchars((!empty($sdm['gelar_depan']) ? $sdm['gelar_depan'].' ' : '') . clean($user['nama']) . (!empty($sdm['gelar_belakang']) ? ', '.$sdm['gelar_belakang'] : '')) ?>
+          </div>
           <div class="prf-email"><?= clean($user['email']) ?></div>
           <?php
-            $rs = ['admin'=>['background:#ede9fe;color:#5b21b6;','Admin'],
-                   'teknisi'=>['background:#dbeafe;color:#1d4ed8;','Teknisi IT'],
-                   'teknisi_ipsrs'=>['background:#ffedd5;color:#c2410c;','Teknisi IPSRS'],
-                   'hrd'=>['background:#fce7f3;color:#9d174d;','HRD'],
-                   'user'=>['background:#f3f4f6;color:#374151;','User']];
-            [$rs_style, $rs_label] = $rs[$user['role']] ?? ['background:#f3f4f6;color:#374151;', ucfirst($user['role'])];
+            $rs_map = [
+              'admin'         => ['background:#ede9fe;color:#5b21b6;','Admin','fa-shield-alt'],
+              'teknisi'       => ['background:#dbeafe;color:#1d4ed8;','Teknisi IT','fa-wrench'],
+              'teknisi_ipsrs' => ['background:#ffedd5;color:#c2410c;','Teknisi IPSRS','fa-screwdriver-wrench'],
+              'hrd'           => ['background:#fce7f3;color:#9d174d;','HRD','fa-people-group'],
+              'akreditasi'    => ['background:#fef9c3;color:#854d0e;','Tim Akreditasi','fa-medal'],
+              'user'          => ['background:#f3f4f6;color:#374151;','User','fa-user'],
+            ];
+            [$rs_style, $rs_label, $rs_icon] = $rs_map[$user['role']] ?? ['background:#f3f4f6;color:#374151;','User','fa-user'];
           ?>
           <div class="prf-role-badge" style="<?= $rs_style ?>">
-            <i class="fa fa-shield-halved"></i> <?= $rs_label ?>
+            <i class="fa <?= $rs_icon ?>"></i> <?= $rs_label ?>
+            <?php if ((int)($user['is_akreditasi'] ?? 0)): ?>
+            &nbsp;<span style="background:rgba(217,119,6,.25);color:#fbbf24;font-size:8px;padding:1px 5px;border-radius:4px;">+AKREDITASI</span>
+            <?php endif; ?>
           </div>
         </div>
 
-        <!-- Info baris -->
         <div class="prf-card-info">
           <?php if(!empty($sdm['nik_rs'])): ?>
           <div class="prf-info-row">
@@ -514,21 +405,21 @@ include '../includes/header.php';
           <?php endif; ?>
         </div>
 
-        <!-- Progress kelengkapan data SDM -->
         <div class="prf-progress-wrap">
           <div class="prf-progress-label">
             <span>Kelengkapan Data SDM</span>
-            <span><?= $sdm_pct ?>%</span>
+            <span style="color:#00c896;"><?= $sdm_pct ?>%</span>
           </div>
           <div class="prf-progress-bar">
             <div class="prf-progress-fill" style="width:<?= $sdm_pct ?>%;"></div>
           </div>
           <?php if($sdm_pct < 100): ?>
-          <div style="font-size:10.5px;color:#9ca3af;margin-top:5px;">Lengkapi data kepegawaian Anda di tab <strong style="color:#00c896;">Data Kepegawaian</strong></div>
+          <div style="font-size:10.5px;color:#9ca3af;margin-top:5px;">
+            Lengkapi data di tab <strong style="color:#00c896;">Data Kepegawaian</strong>
+          </div>
           <?php endif; ?>
         </div>
 
-        <!-- Statistik tiket -->
         <div class="prf-stat-grid">
           <?php foreach([
             ['Menunggu', $ms['menunggu']??0, '#f59e0b'],
@@ -545,10 +436,8 @@ include '../includes/header.php';
       </div>
     </div>
 
-    <!-- ══ KOLOM KANAN: Tab panel ══ -->
+    <!-- ══ PANEL KANAN ══ -->
     <div class="prf-panel">
-
-      <!-- Tab header -->
       <div class="prf-tabs">
         <button type="button" class="prf-tab active" data-pane="tp-profil">
           <i class="fa fa-user"></i> Edit Profil
@@ -581,25 +470,29 @@ include '../includes/header.php';
               <input type="email" name="email" value="<?= clean($user['email']) ?>" required>
             </div>
           </div>
+
+          <!-- Info: divisi & no_hp dikelola di tab SDM -->
+          <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;
+                      padding:10px 14px;margin-bottom:10px;font-size:12px;color:#1e40af;
+                      display:flex;align-items:flex-start;gap:8px;">
+            <i class="fa fa-circle-info" style="margin-top:2px;flex-shrink:0;"></i>
+            <div>Untuk mengubah <strong>Divisi</strong> dan <strong>No. HP</strong>,
+            gunakan tab <strong><i class="fa fa-id-card"></i> Data Kepegawaian</strong>.
+            Perubahan di sana akan otomatis tersinkron ke profil Anda.</div>
+          </div>
           <div class="prf-g2">
             <div class="prf-fg">
-              <label>Divisi / Unit</label>
-              <select name="divisi">
-                <option value="">— Pilih Divisi —</option>
-                <?php foreach($divs as $dv): ?>
-                <option value="<?= clean($dv['nama']) ?>" <?= $user['divisi']===$dv['nama']?'selected':'' ?>>
-                  <?= clean($dv['nama']) ?><?= $dv['kode'] ? ' ('.$dv['kode'].')' : '' ?>
-                </option>
-                <?php endforeach; ?>
-              </select>
+              <label>Divisi / Unit <span class="opt">(dikelola via Data Kepegawaian)</span></label>
+              <input type="text" value="<?= clean($user['divisi'] ?? '') ?: '—' ?>" readonly>
             </div>
             <div class="prf-fg">
-              <label>No. HP / WhatsApp</label>
-              <input type="text" name="no_hp" value="<?= clean($user['no_hp']??'') ?>" placeholder="08xxxxxxxxxx">
+              <label>No. HP <span class="opt">(dikelola via Data Kepegawaian)</span></label>
+              <input type="text" value="<?= clean($user['no_hp'] ?? '') ?: '—' ?>" readonly>
             </div>
           </div>
+
           <div class="prf-fg">
-            <label>Role <span class="opt">(tidak dapat diubah)</span></label>
+            <label>Role <span class="opt">(tidak dapat diubah sendiri)</span></label>
             <input type="text" value="<?= $rs_label ?>" readonly>
           </div>
           <div style="margin-top:4px;">
@@ -612,13 +505,13 @@ include '../includes/header.php';
       <div id="tp-sdm" class="prf-tab-pane">
         <div class="prf-info-box">
           <i class="fa fa-circle-info"></i>
-          <div>Data kepegawaian ini akan digunakan oleh HRD/Admin. Pastikan data yang Anda isi sudah benar dan sesuai dokumen resmi. Perubahan akan langsung tersimpan ke sistem.</div>
+          <div>Data kepegawaian ini akan digunakan oleh HRD/Admin. Pastikan data yang Anda isi sudah benar dan sesuai dokumen resmi. Perubahan <strong>No. HP</strong> dan <strong>Divisi</strong> di sini akan otomatis tersinkron ke profil akun Anda.</div>
         </div>
 
         <form method="POST">
           <input type="hidden" name="action" value="simpan_sdm">
 
-          <!-- SUB-TABS dalam form SDM -->
+          <!-- Sub-tabs SDM -->
           <div style="display:flex;border-bottom:1px solid #e5e7eb;margin-bottom:18px;overflow-x:auto;gap:0;">
             <?php foreach([
               ['sdm-t-id','fa-id-card','Identitas'],
@@ -637,100 +530,66 @@ include '../includes/header.php';
           <div class="sdm-subpane active" id="sdm-t-id">
             <div class="prf-sec"><i class="fa fa-id-card"></i> Identitas Pribadi</div>
             <div class="prf-g3">
-              <div class="prf-fg">
-                <label>NIK RS <span class="opt">(Nomor Induk Karyawan)</span></label>
-                <input type="text" name="nik_rs" value="<?= sdmVal($sdm,'nik_rs') ?>" placeholder="Nomor Induk RS">
-              </div>
-              <div class="prf-fg">
-                <label>NIK KTP <span class="opt">(16 digit)</span></label>
-                <input type="text" name="nik_ktp" value="<?= sdmVal($sdm,'nik_ktp') ?>" maxlength="16" placeholder="3271xxxxxxxxxxxx">
-              </div>
-              <div class="prf-fg">
-                <label>Jenis Kelamin</label>
-                <select name="jenis_kelamin">
-                  <option value="">— Pilih —</option>
+              <div class="prf-fg"><label>NIK RS <span class="opt">(Nomor Induk Karyawan)</span></label>
+                <input type="text" name="nik_rs" value="<?= sdmVal($sdm,'nik_rs') ?>" placeholder="Nomor Induk RS"></div>
+              <div class="prf-fg"><label>NIK KTP <span class="opt">(16 digit)</span></label>
+                <input type="text" name="nik_ktp" value="<?= sdmVal($sdm,'nik_ktp') ?>" maxlength="16" placeholder="3271xxxxxxxxxxxx"></div>
+              <div class="prf-fg"><label>Jenis Kelamin</label>
+                <select name="jenis_kelamin"><option value="">— Pilih —</option>
                   <option value="L" <?= sdmSel($sdm,'jenis_kelamin','L') ?>>Laki-laki</option>
                   <option value="P" <?= sdmSel($sdm,'jenis_kelamin','P') ?>>Perempuan</option>
-                </select>
-              </div>
+                </select></div>
             </div>
             <div class="prf-g3">
-              <div class="prf-fg">
-                <label>Gelar Depan <span class="opt">dr., Ns., dll</span></label>
-                <input type="text" name="gelar_depan" value="<?= sdmVal($sdm,'gelar_depan') ?>" placeholder="dr. / Ns. / drg.">
-              </div>
-              <div class="prf-fg">
-                <label>Gelar Belakang <span class="opt">M.Kes, Sp.A</span></label>
-                <input type="text" name="gelar_belakang" value="<?= sdmVal($sdm,'gelar_belakang') ?>" placeholder="M.Kes / Sp.A / S.Kep">
-              </div>
-              <div class="prf-fg">
-                <label>Golongan Darah</label>
-                <select name="golongan_darah">
-                  <option value="">— Pilih —</option>
+              <div class="prf-fg"><label>Gelar Depan <span class="opt">dr., Ns., dll</span></label>
+                <input type="text" name="gelar_depan" value="<?= sdmVal($sdm,'gelar_depan') ?>" placeholder="dr. / Ns. / drg."></div>
+              <div class="prf-fg"><label>Gelar Belakang <span class="opt">M.Kes, Sp.A</span></label>
+                <input type="text" name="gelar_belakang" value="<?= sdmVal($sdm,'gelar_belakang') ?>" placeholder="M.Kes / Sp.A"></div>
+              <div class="prf-fg"><label>Golongan Darah</label>
+                <select name="golongan_darah"><option value="">— Pilih —</option>
                   <?php foreach($opt_gol_darah as $g): ?>
                   <option value="<?= $g ?>" <?= sdmSel($sdm,'golongan_darah',$g) ?>><?= $g ?></option>
                   <?php endforeach; ?>
-                </select>
-              </div>
+                </select></div>
             </div>
             <div class="prf-g3">
-              <div class="prf-fg">
-                <label>Tempat Lahir</label>
-                <input type="text" name="tempat_lahir" value="<?= sdmVal($sdm,'tempat_lahir') ?>" placeholder="Kota tempat lahir">
-              </div>
-              <div class="prf-fg">
-                <label>Tanggal Lahir</label>
-                <input type="date" name="tgl_lahir" value="<?= sdmDate($sdm,'tgl_lahir') ?>">
-              </div>
-              <div class="prf-fg">
-                <label>Agama</label>
-                <select name="agama">
-                  <option value="">— Pilih —</option>
-                  <?php foreach($opt_agama as $a): ?>
-                  <option value="<?= $a ?>" <?= sdmSel($sdm,'agama',$a) ?>><?= $a ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </div>
+              <div class="prf-fg"><label>Tempat Lahir</label>
+                <input type="text" name="tempat_lahir" value="<?= sdmVal($sdm,'tempat_lahir') ?>" placeholder="Kota tempat lahir"></div>
+              <div class="prf-fg"><label>Tanggal Lahir</label>
+                <input type="date" name="tgl_lahir" value="<?= sdmDate($sdm,'tgl_lahir') ?>"></div>
+              <div class="prf-fg"><label>Agama</label>
+                <select name="agama"><option value="">— Pilih —</option>
+                  <?php foreach($opt_agama as $a): ?><option value="<?= $a ?>" <?= sdmSel($sdm,'agama',$a) ?>><?= $a ?></option><?php endforeach; ?>
+                </select></div>
             </div>
             <div class="prf-g3">
-              <div class="prf-fg">
-                <label>Status Pernikahan</label>
-                <select name="status_pernikahan">
-                  <option value="">— Pilih —</option>
-                  <?php foreach($opt_status_nik as $sn): ?>
-                  <option value="<?= $sn ?>" <?= sdmSel($sdm,'status_pernikahan',$sn) ?>><?= $sn ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </div>
-              <div class="prf-fg">
-                <label>Jumlah Anak</label>
-                <input type="number" name="jumlah_anak" value="<?= (int)($sdm['jumlah_anak']??0) ?>" min="0" max="20">
-              </div>
+              <div class="prf-fg"><label>Status Pernikahan</label>
+                <select name="status_pernikahan"><option value="">— Pilih —</option>
+                  <?php foreach($opt_status_nik as $sn): ?><option value="<?= $sn ?>" <?= sdmSel($sdm,'status_pernikahan',$sn) ?>><?= $sn ?></option><?php endforeach; ?>
+                </select></div>
+              <div class="prf-fg"><label>Jumlah Anak</label>
+                <input type="number" name="jumlah_anak" value="<?= (int)($sdm['jumlah_anak']??0) ?>" min="0" max="20"></div>
+              <div class="prf-fg"><label>Kewarganegaraan</label>
+                <input type="text" name="kewarganegaraan" value="<?= sdmVal($sdm,'kewarganegaraan','WNI') ?>" placeholder="WNI / WNA"></div>
+            </div>
+            <div class="prf-g3">
+              <div class="prf-fg"><label>Suku / Etnis</label>
+                <input type="text" name="suku" value="<?= sdmVal($sdm,'suku') ?>" placeholder="Jawa / Minang…"></div>
+
             </div>
 
             <div class="prf-sec"><i class="fa fa-graduation-cap"></i> Pendidikan</div>
             <div class="prf-g4">
-              <div class="prf-fg">
-                <label>Pendidikan Terakhir</label>
-                <select name="pendidikan_terakhir">
-                  <option value="">— Pilih —</option>
-                  <?php foreach($opt_pendidikan as $p): ?>
-                  <option value="<?= $p ?>" <?= sdmSel($sdm,'pendidikan_terakhir',$p) ?>><?= $p ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </div>
-              <div class="prf-fg">
-                <label>Jurusan / Prodi</label>
-                <input type="text" name="jurusan" value="<?= sdmVal($sdm,'jurusan') ?>" placeholder="Keperawatan…">
-              </div>
-              <div class="prf-fg">
-                <label>Universitas</label>
-                <input type="text" name="universitas" value="<?= sdmVal($sdm,'universitas') ?>" placeholder="Nama institusi">
-              </div>
-              <div class="prf-fg">
-                <label>Tahun Lulus</label>
-                <input type="number" name="tahun_lulus" value="<?= sdmVal($sdm,'tahun_lulus') ?>" placeholder="2019" min="1970" max="2099">
-              </div>
+              <div class="prf-fg"><label>Pendidikan Terakhir</label>
+                <select name="pendidikan_terakhir"><option value="">— Pilih —</option>
+                  <?php foreach($opt_pendidikan as $p): ?><option value="<?= $p ?>" <?= sdmSel($sdm,'pendidikan_terakhir',$p) ?>><?= $p ?></option><?php endforeach; ?>
+                </select></div>
+              <div class="prf-fg"><label>Jurusan / Prodi</label>
+                <input type="text" name="jurusan" value="<?= sdmVal($sdm,'jurusan') ?>" placeholder="Keperawatan…"></div>
+              <div class="prf-fg"><label>Universitas</label>
+                <input type="text" name="universitas" value="<?= sdmVal($sdm,'universitas') ?>" placeholder="Nama institusi"></div>
+              <div class="prf-fg"><label>Tahun Lulus</label>
+                <input type="number" name="tahun_lulus" value="<?= sdmVal($sdm,'tahun_lulus') ?>" placeholder="2019" min="1970" max="2099"></div>
             </div>
           </div>
 
@@ -738,42 +597,34 @@ include '../includes/header.php';
           <div class="sdm-subpane" id="sdm-t-kt">
             <div class="prf-sec"><i class="fa fa-phone"></i> Kontak</div>
             <div class="prf-g3">
-              <div class="prf-fg">
-                <label>No. HP / WhatsApp</label>
-                <input type="text" name="no_hp" value="<?= sdmVal($sdm,'no_hp',$user['no_hp']??'') ?>" placeholder="08xxxxxxxxxx">
-              </div>
-              <div class="prf-fg">
-                <label>No. HP Darurat</label>
-                <input type="text" name="no_hp_darurat" value="<?= sdmVal($sdm,'no_hp_darurat') ?>" placeholder="08xxxxxxxxxx">
-              </div>
-              <div class="prf-fg">
-                <label>Nama Kontak Darurat</label>
-                <input type="text" name="kontak_darurat" value="<?= sdmVal($sdm,'kontak_darurat') ?>" placeholder="Nama keluarga">
-              </div>
+              <div class="prf-fg"><label>No. HP / WhatsApp</label>
+                <input type="text" name="no_hp" value="<?= sdmVal($sdm,'no_hp',$user['no_hp']??'') ?>" placeholder="08xxxxxxxxxx"></div>
+              <div class="prf-fg"><label>No. HP Darurat</label>
+                <input type="text" name="no_hp_darurat" value="<?= sdmVal($sdm,'no_hp_darurat') ?>" placeholder="08xxxxxxxxxx"></div>
+              <div class="prf-fg"><label>Nama Kontak Darurat</label>
+                <input type="text" name="kontak_darurat" value="<?= sdmVal($sdm,'kontak_darurat') ?>" placeholder="Nama keluarga"></div>
             </div>
-            <div class="prf-g3">
-              <div class="prf-fg">
-                <label>Hubungan Kontak Darurat</label>
-                <input type="text" name="hubungan_darurat" value="<?= sdmVal($sdm,'hubungan_darurat') ?>" placeholder="Istri / Suami / Orang Tua…">
-              </div>
+            <div class="prf-g2">
+              <div class="prf-fg"><label>Hubungan Kontak Darurat</label>
+                <input type="text" name="hubungan_darurat" value="<?= sdmVal($sdm,'hubungan_darurat') ?>" placeholder="Istri / Suami / Orang Tua…"></div>
             </div>
 
             <div class="prf-sec"><i class="fa fa-location-dot"></i> Alamat KTP</div>
-            <div class="prf-fg">
-              <label>Alamat Lengkap</label>
-              <textarea name="alamat_ktp" placeholder="Jalan, RT/RW, Kelurahan, Kecamatan…"><?= sdmVal($sdm,'alamat_ktp') ?></textarea>
-            </div>
+            <div class="prf-fg"><label>Alamat Lengkap</label>
+              <textarea name="alamat_ktp" placeholder="Jalan, RT/RW…"><?= sdmVal($sdm,'alamat_ktp') ?></textarea></div>
             <div class="prf-g4">
+              <div class="prf-fg"><label>Kelurahan</label><input type="text" name="kelurahan_ktp" value="<?= sdmVal($sdm,'kelurahan_ktp') ?>"></div>
+              <div class="prf-fg"><label>Kecamatan</label><input type="text" name="kecamatan_ktp" value="<?= sdmVal($sdm,'kecamatan_ktp') ?>"></div>
               <div class="prf-fg"><label>Kota / Kabupaten</label><input type="text" name="kota_ktp" value="<?= sdmVal($sdm,'kota_ktp') ?>"></div>
               <div class="prf-fg"><label>Provinsi</label><input type="text" name="provinsi_ktp" value="<?= sdmVal($sdm,'provinsi_ktp') ?>"></div>
+            </div>
+            <div class="prf-g2">
               <div class="prf-fg"><label>Kode Pos</label><input type="text" name="kode_pos_ktp" value="<?= sdmVal($sdm,'kode_pos_ktp') ?>" maxlength="10"></div>
             </div>
 
             <div class="prf-sec"><i class="fa fa-house"></i> Alamat Domisili <span style="font-size:10px;color:#6b7280;font-weight:400;">(kosongkan jika sama KTP)</span></div>
-            <div class="prf-fg">
-              <label>Alamat Domisili</label>
-              <textarea name="alamat_domisili" placeholder="Kosongkan jika sama dengan KTP…"><?= sdmVal($sdm,'alamat_domisili') ?></textarea>
-            </div>
+            <div class="prf-fg"><label>Alamat Domisili</label>
+              <textarea name="alamat_domisili" placeholder="Kosongkan jika sama dengan KTP…"><?= sdmVal($sdm,'alamat_domisili') ?></textarea></div>
             <div class="prf-g2">
               <div class="prf-fg"><label>Kota Domisili</label><input type="text" name="kota_domisili" value="<?= sdmVal($sdm,'kota_domisili') ?>"></div>
             </div>
@@ -783,44 +634,39 @@ include '../includes/header.php';
           <div class="sdm-subpane" id="sdm-t-kp">
             <div class="prf-sec"><i class="fa fa-briefcase"></i> Data Kepegawaian</div>
             <div class="prf-g3">
-              <div class="prf-fg">
-                <label>Jenis Karyawan</label>
-                <select name="jenis_karyawan">
-                  <option value="">— Pilih —</option>
-                  <?php foreach($opt_jenis_kary as $jk): ?>
-                  <option value="<?= $jk ?>" <?= sdmSel($sdm,'jenis_karyawan',$jk) ?>><?= $jk ?></option>
+              <div class="prf-fg"><label>Divisi / Unit Kerja</label>
+                <select name="divisi">
+                  <option value="">— Pilih Divisi —</option>
+                  <?php foreach($divs as $dv): ?>
+                  <option value="<?= clean($dv['nama']) ?>" <?= sdmSel($sdm,'divisi',$dv['nama']) ?>><?= clean($dv['nama']) ?><?= $dv['kode']?' ('.$dv['kode'].')':'' ?></option>
                   <?php endforeach; ?>
-                </select>
-              </div>
-              <div class="prf-fg">
-                <label>Jenis Tenaga / Profesi</label>
-                <input type="text" name="jenis_tenaga" value="<?= sdmVal($sdm,'jenis_tenaga') ?>" placeholder="Dokter / Perawat / Bidan…">
-              </div>
-              <div class="prf-fg">
-                <label>Spesialisasi</label>
-                <input type="text" name="spesialisasi" value="<?= sdmVal($sdm,'spesialisasi') ?>" placeholder="Sp.A / ICU / IGD / —">
-              </div>
+                </select></div>
+              <div class="prf-fg"><label>Unit Kerja <span class="opt">(sub divisi)</span></label>
+                <input type="text" name="unit_kerja" value="<?= sdmVal($sdm,'unit_kerja') ?>" placeholder="ICU, IGD, Poli Anak…"></div>
+              <div class="prf-fg"><label>Jenis Karyawan</label>
+                <select name="jenis_karyawan"><option value="">— Pilih —</option>
+                  <?php foreach($opt_jenis_kary as $jk): ?><option value="<?= $jk ?>" <?= sdmSel($sdm,'jenis_karyawan',$jk) ?>><?= $jk ?></option><?php endforeach; ?>
+                </select></div>
             </div>
             <div class="prf-g3">
-              <div class="prf-fg">
-                <label>Jabatan</label>
-                <select name="jabatan_id">
-                  <option value="">— Pilih Jabatan —</option>
+              <div class="prf-fg"><label>Jenis Tenaga / Profesi</label>
+                <input type="text" name="jenis_tenaga" value="<?= sdmVal($sdm,'jenis_tenaga') ?>" placeholder="Dokter / Perawat / Bidan…"></div>
+              <div class="prf-fg"><label>Spesialisasi</label>
+                <input type="text" name="spesialisasi" value="<?= sdmVal($sdm,'spesialisasi') ?>" placeholder="Sp.A / ICU / IGD / —"></div>
+              <div class="prf-fg"><label>Sub Spesialisasi</label>
+                <input type="text" name="sub_spesialisasi" value="<?= sdmVal($sdm,'sub_spesialisasi') ?>" placeholder="Jika ada"></div>
+            </div>
+            <div class="prf-g3">
+              <div class="prf-fg"><label>Jabatan</label>
+                <select name="jabatan_id"><option value="">— Pilih Jabatan —</option>
                   <?php foreach($jabatan_list as $jb): ?>
-                  <option value="<?= (int)$jb['id'] ?>" <?= (isset($sdm['jabatan_id']) && (int)$sdm['jabatan_id']===(int)$jb['id'])?'selected':'' ?>>
-                    <?= htmlspecialchars($jb['nama']) ?><?= $jb['kode']?' ('.$jb['kode'].')':'' ?>
-                  </option>
+                  <option value="<?= (int)$jb['id'] ?>" <?= (isset($sdm['jabatan_id']) && (int)$sdm['jabatan_id']===(int)$jb['id'])?'selected':'' ?>><?= htmlspecialchars($jb['nama']) ?><?= $jb['kode']?' ('.$jb['kode'].')':'' ?></option>
                   <?php endforeach; ?>
-                </select>
-              </div>
-              <div class="prf-fg">
-                <label>Status Kepegawaian</label>
+                </select></div>
+              <div class="prf-fg"><label>Status Kepegawaian</label>
                 <select name="status_kepegawaian">
-                  <?php foreach($opt_status_kep as $sk): ?>
-                  <option value="<?= $sk ?>" <?= sdmSel($sdm,'status_kepegawaian',$sk) ?>><?= $sk ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </div>
+                  <?php foreach($opt_status_kep as $sk): ?><option value="<?= $sk ?>" <?= sdmSel($sdm,'status_kepegawaian',$sk) ?>><?= $sk ?></option><?php endforeach; ?>
+                </select></div>
             </div>
             <div class="prf-g4">
               <div class="prf-fg"><label>Tanggal Masuk</label><input type="date" name="tgl_masuk" value="<?= sdmDate($sdm,'tgl_masuk') ?>"></div>
@@ -828,10 +674,8 @@ include '../includes/header.php';
               <div class="prf-fg"><label>Akhir Kontrak</label><input type="date" name="tgl_kontrak_selesai" value="<?= sdmDate($sdm,'tgl_kontrak_selesai') ?>"></div>
               <div class="prf-fg"><label>Tgl Pengangkatan Tetap</label><input type="date" name="tgl_pengangkatan" value="<?= sdmDate($sdm,'tgl_pengangkatan') ?>"></div>
             </div>
-            <div class="prf-fg">
-              <label>Catatan</label>
-              <textarea name="catatan" placeholder="Catatan kepegawaian…"><?= sdmVal($sdm,'catatan') ?></textarea>
-            </div>
+            <div class="prf-fg"><label>Catatan</label>
+              <textarea name="catatan" placeholder="Catatan kepegawaian…"><?= sdmVal($sdm,'catatan') ?></textarea></div>
           </div>
 
           <!-- KEUANGAN -->
@@ -839,23 +683,17 @@ include '../includes/header.php';
             <div class="prf-sec"><i class="fa fa-shield-halved"></i> BPJS &amp; Pajak</div>
             <div class="prf-g3">
               <div class="prf-fg"><label>No. BPJS Kesehatan</label><input type="text" name="no_bpjs_kes" value="<?= sdmVal($sdm,'no_bpjs_kes') ?>" placeholder="0001xxxxxxxxx"></div>
-              <div class="prf-fg"><label>No. BPJS Ketenagakerjaan</label><input type="text" name="no_bpjs_tk" value="<?= sdmVal($sdm,'no_bpjs_tk') ?>" placeholder="Nomor BPJS TK"></div>
+              <div class="prf-fg"><label>No. BPJS Ketenagakerjaan</label><input type="text" name="no_bpjs_tk" value="<?= sdmVal($sdm,'no_bpjs_tk') ?>"></div>
               <div class="prf-fg"><label>No. NPWP</label><input type="text" name="no_npwp" value="<?= sdmVal($sdm,'no_npwp') ?>" placeholder="XX.XXX.XXX.X-XXX.XXX"></div>
             </div>
-
             <div class="prf-sec"><i class="fa fa-building-columns"></i> Rekening Bank</div>
             <div class="prf-g3">
-              <div class="prf-fg">
-                <label>Bank</label>
-                <select name="bank">
-                  <option value="">— Pilih Bank —</option>
-                  <?php foreach($opt_bank as $b): ?>
-                  <option value="<?= $b ?>" <?= sdmSel($sdm,'bank',$b) ?>><?= $b ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </div>
-              <div class="prf-fg"><label>No. Rekening</label><input type="text" name="no_rekening" value="<?= sdmVal($sdm,'no_rekening') ?>" placeholder="Nomor rekening"></div>
-              <div class="prf-fg"><label>Atas Nama</label><input type="text" name="atas_nama_rek" value="<?= sdmVal($sdm,'atas_nama_rek') ?>" placeholder="Nama pemilik rekening"></div>
+              <div class="prf-fg"><label>Bank</label>
+                <select name="bank"><option value="">— Pilih Bank —</option>
+                  <?php foreach($opt_bank as $b): ?><option value="<?= $b ?>" <?= sdmSel($sdm,'bank',$b) ?>><?= $b ?></option><?php endforeach; ?>
+                </select></div>
+              <div class="prf-fg"><label>No. Rekening</label><input type="text" name="no_rekening" value="<?= sdmVal($sdm,'no_rekening') ?>"></div>
+              <div class="prf-fg"><label>Atas Nama</label><input type="text" name="atas_nama_rek" value="<?= sdmVal($sdm,'atas_nama_rek') ?>"></div>
             </div>
           </div>
 
@@ -864,43 +702,36 @@ include '../includes/header.php';
             <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#065f46;display:flex;align-items:center;gap:8px;">
               <i class="fa fa-circle-info"></i> Untuk karyawan <strong>Non-Medis</strong>, isi dengan <code>-</code> atau kosongkan saja.
             </div>
-
             <div class="prf-sec"><i class="fa fa-id-badge"></i> STR — Surat Tanda Registrasi</div>
             <div class="prf-g3">
               <div class="prf-fg"><label>Nomor STR</label><input type="text" name="no_str" value="<?= sdmVal($sdm,'no_str') ?>" placeholder="Nomor STR atau -"></div>
               <div class="prf-fg"><label>Tgl Terbit STR</label><input type="date" name="tgl_terbit_str" value="<?= sdmDate($sdm,'tgl_terbit_str') ?>"></div>
               <div class="prf-fg"><label>Exp. STR</label><input type="date" name="tgl_exp_str" value="<?= sdmDate($sdm,'tgl_exp_str') ?>">
                 <?php if(!empty($sdm['tgl_exp_str']) && strtotime($sdm['tgl_exp_str']) < strtotime('+30 days')): ?>
-                <span style="font-size:10px;color:#dc2626;font-weight:700;margin-top:2px;"><i class="fa fa-triangle-exclamation"></i> Segera expired!</span>
+                <span style="font-size:10px;color:#dc2626;font-weight:700;"><i class="fa fa-triangle-exclamation"></i> Segera expired!</span>
                 <?php endif; ?>
               </div>
             </div>
-
             <div class="prf-sec"><i class="fa fa-file-medical"></i> SIP — Surat Izin Praktik</div>
             <div class="prf-g3">
               <div class="prf-fg"><label>Nomor SIP</label><input type="text" name="no_sip" value="<?= sdmVal($sdm,'no_sip') ?>" placeholder="Nomor SIP atau -"></div>
               <div class="prf-fg"><label>Tgl Terbit SIP</label><input type="date" name="tgl_terbit_sip" value="<?= sdmDate($sdm,'tgl_terbit_sip') ?>"></div>
               <div class="prf-fg"><label>Exp. SIP</label><input type="date" name="tgl_exp_sip" value="<?= sdmDate($sdm,'tgl_exp_sip') ?>">
                 <?php if(!empty($sdm['tgl_exp_sip']) && strtotime($sdm['tgl_exp_sip']) < strtotime('+30 days')): ?>
-                <span style="font-size:10px;color:#dc2626;font-weight:700;margin-top:2px;"><i class="fa fa-triangle-exclamation"></i> Segera expired!</span>
+                <span style="font-size:10px;color:#dc2626;font-weight:700;"><i class="fa fa-triangle-exclamation"></i> Segera expired!</span>
                 <?php endif; ?>
               </div>
             </div>
-
             <div class="prf-sec"><i class="fa fa-file-signature"></i> SIK — Surat Izin Kerja</div>
             <div class="prf-g3">
               <div class="prf-fg"><label>Nomor SIK</label><input type="text" name="no_sik" value="<?= sdmVal($sdm,'no_sik') ?>" placeholder="Nomor SIK atau -"></div>
               <div class="prf-fg"><label>Exp. SIK</label><input type="date" name="tgl_exp_sik" value="<?= sdmDate($sdm,'tgl_exp_sik') ?>"></div>
             </div>
-
             <div class="prf-sec"><i class="fa fa-certificate"></i> Kompetensi &amp; Sertifikasi</div>
-            <div class="prf-fg">
-              <label>Kompetensi / Sertifikasi Tambahan</label>
-              <textarea name="kompetensi" placeholder="BLS, ACLS, BTCLS, PONEK, dll. Pisahkan koma. Isi '-' jika tidak ada."><?= sdmVal($sdm,'kompetensi') ?></textarea>
-            </div>
+            <div class="prf-fg"><label>Kompetensi / Sertifikasi Tambahan</label>
+              <textarea name="kompetensi" placeholder="BLS, ACLS, BTCLS, PONEK, dll. Pisahkan koma."><?= sdmVal($sdm,'kompetensi') ?></textarea></div>
           </div>
 
-          <!-- Tombol simpan SDM -->
           <div class="prf-save-row">
             <span style="font-size:11px;color:#9ca3af;"><i class="fa fa-clock"></i> Terakhir diperbarui: <?= !empty($sdm['updated_at']) ? date('d M Y H:i', strtotime($sdm['updated_at'])) : '—' ?></span>
             <button type="submit" class="btn btn-primary"><i class="fa fa-save"></i> Simpan Data Kepegawaian</button>
@@ -934,29 +765,9 @@ include '../includes/header.php';
   </div><!-- /.prf-wrap -->
 </div><!-- /.content -->
 
-<style>
-/* Sub-tabs SDM */
-.sdm-subtab {
-  padding:8px 14px;
-  font-size:11.5px; font-weight:600;
-  color:#6b7280;
-  border:none; background:none;
-  cursor:pointer;
-  white-space:nowrap;
-  border-bottom:2px solid transparent;
-  margin-bottom:-1px;
-  transition:all .15s;
-  display:inline-flex; align-items:center; gap:5px;
-}
-.sdm-subtab.active  { color:#00c896; border-bottom-color:#00c896; background:#f0fdf4; border-radius:6px 6px 0 0; }
-.sdm-subtab:hover:not(.active) { color:#374151; background:#f9fafb; }
-.sdm-subpane { display:none; }
-.sdm-subpane.active { display:block; }
-</style>
-
 <script>
 (function(){
-  // ── Tab utama (Profil / SDM / Password) ──
+  // Tab utama
   document.querySelectorAll('.prf-tab').forEach(function(btn){
     btn.addEventListener('click', function(){
       document.querySelectorAll('.prf-tab').forEach(function(b){ b.classList.remove('active'); });
@@ -967,7 +778,7 @@ include '../includes/header.php';
     });
   });
 
-  // ── Sub-tabs di dalam form SDM ──
+  // Sub-tabs SDM
   document.querySelectorAll('.sdm-subtab').forEach(function(btn){
     btn.addEventListener('click', function(){
       document.querySelectorAll('.sdm-subtab').forEach(function(b){ b.classList.remove('active'); });
@@ -978,7 +789,7 @@ include '../includes/header.php';
     });
   });
 
-  // ── Validasi real-time konfirmasi password ──
+  // Validasi real-time konfirmasi password
   var pwNew = document.getElementById('pw-new');
   var pwCnf = document.getElementById('pw-cnf');
   var pwMsg = document.getElementById('pw-match-msg');
@@ -995,7 +806,7 @@ include '../includes/header.php';
   if (pwNew) pwNew.addEventListener('input', checkPw);
   if (pwCnf) pwCnf.addEventListener('input', checkPw);
 
-  // ── Buka tab SDM otomatis jika URL ada #sdm ──
+  // Buka tab SDM otomatis jika URL ada #sdm
   if (window.location.hash === '#sdm') {
     var sdmTab = document.querySelector('.prf-tab[data-pane="tp-sdm"]');
     if (sdmTab) sdmTab.click();

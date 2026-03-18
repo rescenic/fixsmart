@@ -8,25 +8,7 @@ session_start([
 require_once 'config.php';
 if (isLoggedIn()) redirect(APP_URL . '/dashboard.php');
 
-// ── PASTIKAN TABEL data_karyawan ADA ──────────────────────
-try {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS data_karyawan (
-            id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            user_id      INT UNSIGNED NOT NULL,
-            nik          VARCHAR(30)  DEFAULT NULL,
-            nama         VARCHAR(100) NOT NULL,
-            email        VARCHAR(100) DEFAULT NULL,
-            no_hp        VARCHAR(20)  DEFAULT NULL,
-            divisi       VARCHAR(100) DEFAULT NULL,
-            jabatan_id   INT UNSIGNED DEFAULT NULL,
-            status       ENUM('aktif','nonaktif') NOT NULL DEFAULT 'aktif',
-            created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY uq_user_id (user_id),
-            UNIQUE KEY uq_nik (nik)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
-    ");
-} catch (Exception $e) {}
+// ── Pastikan kolom sdm_karyawan ada (sdm_karyawan dibuat via master_karyawan/profil) ──
 
 // ── AMBIL DATA DROPDOWN ────────────────────────────────────
 $divisi_list  = getBagianList($pdo);
@@ -43,7 +25,7 @@ if (empty($_SESSION['csrf_token_reg'])) {
 function generateCaptchaReg() {
     $ops = ['+','-','+','+','-']; $op = $ops[array_rand($ops)];
     if ($op==='+') { $a=rand(1,9); $b=rand(1,9); $ans=$a+$b; }
-    else           { $a=rand(3,9); $b=rand(1,$a); $ans=$a-$b; }
+    else             { $a=rand(3,9); $b=rand(1,$a); $ans=$a-$b; }
     $_SESSION['reg_captcha_answer'] = $ans;
     return "$a $op $b";
 }
@@ -51,13 +33,10 @@ if (empty($_SESSION['reg_captcha_answer'])) $captcha_soal = generateCaptchaReg()
 else $captcha_soal = $_SESSION['reg_captcha_soal'] ?? generateCaptchaReg();
 $_SESSION['reg_captcha_soal'] = $captcha_soal;
 
-// ── HELPER: generate username unik dari nama ───────────────
 function generateUsername(PDO $pdo, string $nama): string {
-    // Ambil kata pertama, lowercase, hapus karakter non-alphanumeric
     $base = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', explode(' ', trim($nama))[0]));
     if (strlen($base) < 3) $base = 'user' . $base;
-    $uname = $base;
-    $i = 1;
+    $uname = $base; $i = 1;
     while (true) {
         $st = $pdo->prepare("SELECT id FROM users WHERE username = ?");
         $st->execute([$uname]);
@@ -71,7 +50,6 @@ function generateUsername(PDO $pdo, string $nama): string {
 $errors = []; $success = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-
     if (!hash_equals($_SESSION['csrf_token_reg'] ?? '', $_POST['csrf_token'] ?? '')) {
         $errors[] = 'Permintaan tidak valid.';
     } elseif ((int)($_POST['captcha'] ?? -999) !== (int)($_SESSION['reg_captcha_answer'] ?? -1)) {
@@ -79,61 +57,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $captcha_soal = generateCaptchaReg();
         $_SESSION['reg_captcha_soal'] = $captcha_soal;
     } else {
-        $nama       = trim($_POST['nama']        ?? '');
-        $email      = trim($_POST['email']       ?? '');
-        $divisi     = $_POST['divisi']           ?? '';
-        $no_hp      = trim($_POST['no_hp']       ?? '');
-        $nik        = trim($_POST['nik']         ?? '');
-        $jabatan_id = (int)($_POST['jabatan_id'] ?? 0) ?: null;
-        $pass       = $_POST['password']         ?? '';
-        $cnf        = $_POST['confirm']          ?? '';
+        $nama   = trim($_POST['nama']    ?? '');
+        $email  = trim($_POST['email']   ?? '');
+        $divisi = $_POST['divisi']       ?? '';
+        $no_hp  = trim($_POST['no_hp']   ?? '');
+        $nik    = trim($_POST['nik']     ?? '');
+        $pass   = $_POST['password']    ?? '';
+        $cnf    = $_POST['confirm']     ?? '';
+        $jabatan_id = null; // diisi nanti oleh HRD
 
-        // Validasi
-        if (!$nama)                                      $errors[] = 'Nama lengkap wajib diisi.';
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL))  $errors[] = 'Format email tidak valid.';
-        if (strlen($pass) < 6)                           $errors[] = 'Password minimal 6 karakter.';
-        if ($pass !== $cnf)                              $errors[] = 'Konfirmasi password tidak cocok.';
+        if (!$nama)                                     $errors[] = 'Nama lengkap wajib diisi.';
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Format email tidak valid.';
+        if (!$nik)                                      $errors[] = 'NIK RS wajib diisi.';
+        if (strlen($pass) < 6)                          $errors[] = 'Password minimal 6 karakter.';
+        if ($pass !== $cnf)                             $errors[] = 'Konfirmasi password tidak cocok.';
 
-        // Cek NIK duplikat
         if (!$errors && $nik !== '') {
             try {
-                $ck = $pdo->prepare("SELECT id FROM data_karyawan WHERE nik = ?");
+                $ck = $pdo->prepare("SELECT u.nama FROM sdm_karyawan s JOIN users u ON u.id=s.user_id WHERE s.nik_rs=? LIMIT 1");
                 $ck->execute([$nik]);
-                if ($ck->fetch()) $errors[] = 'NIK <strong>' . htmlspecialchars($nik) . '</strong> sudah terdaftar.';
+                $who = $ck->fetchColumn();
+                if ($who) $errors[] = 'NIK RS <strong>' . htmlspecialchars($nik) . '</strong> sudah digunakan oleh <strong>' . htmlspecialchars($who) . '</strong>.';
             } catch (Exception $e) {}
         }
 
         if (empty($errors)) {
-            // Cek email sudah dipakai
             $st = $pdo->prepare("SELECT id FROM users WHERE email = ?");
             $st->execute([$email]);
             if ($st->fetch()) {
                 $errors[] = 'Email sudah digunakan. Silakan login atau gunakan email lain.';
             } else {
-                // Generate username otomatis
                 $uname = generateUsername($pdo, $nama);
-
-                // INSERT users
-                $pdo->prepare("INSERT INTO users (nama,username,email,password,divisi,jabatan_id,no_hp) VALUES (?,?,?,?,?,?,?)")
-                    ->execute([
-                        $nama, $uname, $email,
-                        password_hash($pass, PASSWORD_BCRYPT),
-                        $divisi     ?: null,
-                        $jabatan_id,
-                        $no_hp      ?: null,
-                    ]);
+                $pdo->prepare("INSERT INTO users (nama,username,email,password,divisi,no_hp) VALUES (?,?,?,?,?,?)")
+                    ->execute([$nama, $uname, $email, password_hash($pass, PASSWORD_BCRYPT), $divisi ?: null, $no_hp ?: null]);
                 $new_user_id = (int)$pdo->lastInsertId();
 
-                // INSERT data_karyawan
+                // INSERT sdm_karyawan — data awal dari register
                 try {
                     $pdo->prepare("
-                        INSERT INTO data_karyawan (user_id, nik, nama, email, no_hp, divisi, jabatan_id, status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 'aktif')
+                        INSERT INTO sdm_karyawan (user_id, nik_rs, no_hp, divisi, jabatan_id, updated_by)
+                        VALUES (?, ?, ?, ?, ?, ?)
                         ON DUPLICATE KEY UPDATE
-                            nik=VALUES(nik), nama=VALUES(nama), email=VALUES(email),
-                            no_hp=VALUES(no_hp), divisi=VALUES(divisi), jabatan_id=VALUES(jabatan_id)
-                    ")->execute([$new_user_id, $nik ?: null, $nama, $email, $no_hp ?: null, $divisi ?: null, $jabatan_id]);
-                } catch (Exception $e) {}
+                            nik_rs     = COALESCE(VALUES(nik_rs), nik_rs),
+                            no_hp      = COALESCE(VALUES(no_hp), no_hp),
+                            divisi     = COALESCE(VALUES(divisi), divisi),
+                            jabatan_id = COALESCE(VALUES(jabatan_id), jabatan_id)
+                    ")->execute([$new_user_id, $nik ?: null, $no_hp ?: null, $divisi ?: null, $jabatan_id, $new_user_id]);
+                } catch (Exception $e) {
+                    // sdm_karyawan akan dilengkapi HRD/Admin via Master Karyawan
+                }
 
                 $success = true;
                 unset($_SESSION['reg_captcha_answer'], $_SESSION['reg_captcha_soal']);
@@ -165,7 +137,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     --danger:#ff4d6d; --success:#10b981; --radius:14px;
   }
   html,body { height:100%; font-family:'Space Grotesk',sans-serif; background:var(--bg); color:var(--text); overflow:hidden; }
-
   .bg-canvas { position:fixed; inset:0; z-index:0; overflow:hidden; }
   .bg-canvas::before { content:''; position:absolute; inset:0;
     background:radial-gradient(ellipse 80% 60% at 15% 40%,rgba(0,229,176,0.07) 0%,transparent 60%),
@@ -187,7 +158,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   .brand { display:flex; align-items:center; gap:12px; }
   .brand-icon { width:44px; height:44px; border-radius:10px; background:linear-gradient(135deg,var(--teal),#00a8cc); display:flex; align-items:center; justify-content:center; font-size:20px; color:#0a0f14; font-weight:700; box-shadow:0 0 24px var(--teal-glow); }
   .brand-name { font-family:'Syne',sans-serif; font-size:22px; font-weight:800; letter-spacing:-0.5px; }
-  .brand-name span { color:var(--teal); }
   .hero { flex:1; display:flex; flex-direction:column; justify-content:center; }
   .hero-tag { display:inline-flex; align-items:center; gap:8px; background:var(--teal-dim); border:1px solid rgba(0,229,176,0.2); color:var(--teal); font-size:11px; font-weight:600; letter-spacing:1.5px; text-transform:uppercase; padding:5px 14px; border-radius:99px; width:fit-content; margin-bottom:28px; }
   .hero h1 { font-family:'Syne',sans-serif; font-size:clamp(36px,4vw,56px); font-weight:800; line-height:1.05; letter-spacing:-2px; margin-bottom:20px; }
@@ -202,8 +172,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   .features { display:flex; flex-direction:column; gap:12px; }
   .feat-item { display:flex; align-items:center; gap:12px; font-size:13px; color:var(--muted); }
   .feat-dot  { width:6px; height:6px; border-radius:50%; background:var(--teal); box-shadow:0 0 8px var(--teal); flex-shrink:0; }
-  .wa-btn { display:inline-flex; align-items:center; gap:10px; background:rgba(37,211,102,0.1); border:1px solid rgba(37,211,102,0.3); color:#25d366; padding:11px 20px; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .2s; width:fit-content; }
-  .wa-btn:hover { background:rgba(37,211,102,0.18); transform:translateY(-1px); }
   .left-footer { display:flex; align-items:center; justify-content:space-between; }
   .copyright { font-size:11px; color:var(--muted); }
   .copyright a { color:var(--teal); text-decoration:none; }
@@ -216,8 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   .form-header h2 { font-family:'Syne',sans-serif; font-size:26px; font-weight:800; letter-spacing:-1px; margin-bottom:4px; }
   .form-header p  { font-size:13px; color:var(--muted); }
 
-  .alert { display:flex; align-items:flex-start; gap:10px; padding:10px 14px; border-radius:10px; font-size:12px; margin-bottom:12px; animation:slideIn .3s ease; }
-  @keyframes slideIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:none} }
+  .alert { display:flex; align-items:flex-start; gap:10px; padding:10px 14px; border-radius:10px; font-size:12px; margin-bottom:12px; }
   .alert i { margin-top:1px; flex-shrink:0; font-size:14px; }
   .alert ul { margin:3px 0 0 14px; }
   .alert ul li { margin-bottom:1px; }
@@ -229,7 +196,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   .success-card h3 { font-family:'Syne',sans-serif; font-size:22px; font-weight:800; margin-bottom:8px; }
   .success-card p  { font-size:13px; color:var(--muted); margin-bottom:24px; line-height:1.7; }
   .btn-login-now { display:inline-flex; align-items:center; gap:8px; background:linear-gradient(135deg,var(--teal),var(--teal2)); color:#0a0f14; font-family:'Syne',sans-serif; font-size:14px; font-weight:800; padding:12px 28px; border-radius:10px; text-decoration:none; box-shadow:0 4px 20px var(--teal-glow); }
-  .btn-login-now:hover { transform:translateY(-2px); box-shadow:0 8px 28px var(--teal-glow); }
 
   .sec-title { display:flex; align-items:center; gap:8px; font-size:10px; font-weight:700; color:var(--teal); letter-spacing:1.5px; text-transform:uppercase; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid var(--border); }
   .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
@@ -252,45 +218,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   .section-divider { border:none; border-top:1px solid var(--border); margin:12px 0; }
   .field-hint { font-size:10.5px; color:var(--muted); margin-top:4px; display:flex; align-items:center; gap:4px; }
   .field-hint i { color:var(--teal); font-size:10px; }
-
   .captcha-box { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px 16px; margin-bottom:12px; }
   .captcha-label { font-size:11px; font-weight:600; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; margin-bottom:8px; }
-  .captcha-label i { color:var(--teal); margin-right:4px; }
   .captcha-row { display:flex; align-items:center; gap:12px; }
   .captcha-soal { font-family:'Syne',sans-serif; font-size:22px; font-weight:800; color:var(--teal); background:var(--teal-dim); border:1px solid rgba(0,229,176,0.2); padding:8px 18px; border-radius:8px; letter-spacing:2px; }
   .captcha-eq   { font-size:20px; color:var(--muted); font-weight:700; }
   .captcha-input { width:80px; height:42px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-family:'Syne',sans-serif; font-size:18px; font-weight:700; text-align:center; outline:none; transition:border-color .2s,box-shadow .2s; }
   .captcha-input:focus { border-color:var(--teal); box-shadow:0 0 0 3px var(--teal-dim); }
-
-  .btn-submit { width:100%; height:48px; background:linear-gradient(135deg,var(--teal),var(--teal2)); border:none; border-radius:10px; color:#0a0f14; font-family:'Syne',sans-serif; font-size:15px; font-weight:800; letter-spacing:.5px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px; transition:transform .15s,box-shadow .15s; position:relative; overflow:hidden; box-shadow:0 4px 20px var(--teal-glow); }
-  .btn-submit::after { content:''; position:absolute; inset:0; background:linear-gradient(135deg,rgba(255,255,255,0.15),transparent); }
-  .btn-submit:hover { transform:translateY(-2px); box-shadow:0 8px 28px var(--teal-glow); }
-
+  .btn-submit { width:100%; height:48px; background:linear-gradient(135deg,var(--teal),var(--teal2)); border:none; border-radius:10px; color:#0a0f14; font-family:'Syne',sans-serif; font-size:15px; font-weight:800; letter-spacing:.5px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px; transition:transform .15s,box-shadow .15s; box-shadow:0 4px 20px var(--teal-glow); }
+  .btn-submit:hover { transform:translateY(-2px); }
   .divider { display:flex; align-items:center; gap:12px; margin:14px 0 10px; }
   .divider::before, .divider::after { content:''; flex:1; height:1px; background:var(--border); }
   .divider span { font-size:11px; color:var(--muted); white-space:nowrap; }
   .switch-link { text-align:center; font-size:13px; color:var(--muted); }
   .switch-link a { color:var(--teal); font-weight:600; text-decoration:none; }
-  .switch-link a:hover { text-decoration:underline; }
 
-  @media (max-width:900px)  { .left { display:none; } .right { width:100%; } }
-  @media (max-width:480px)  { .right-inner { padding:32px 24px; } }
+  /* Info box NIK */
+  .nik-info { background:rgba(0,229,176,0.06); border:1px solid rgba(0,229,176,0.2); border-radius:8px; padding:8px 12px; margin-top:8px; font-size:11px; color:#9ca3af; display:flex; gap:8px; }
+  .nik-info i { color:var(--teal); flex-shrink:0; margin-top:1px; }
+  .nik-info table { border-collapse:collapse; width:100%; }
+  .nik-info td { padding:1px 6px 1px 0; vertical-align:top; }
+  .nik-info td:first-child { color:var(--teal); font-weight:600; white-space:nowrap; }
+
+  @media (max-width:900px) { .left { display:none; } .right { width:100%; } }
+  @media (max-width:480px) { .right-inner { padding:32px 24px; } }
 </style>
 </head>
 <body>
-<div class="bg-canvas">
-  <div class="grid-lines"></div>
-  <div class="orb orb-1"></div>
-  <div class="orb orb-2"></div>
-</div>
+<div class="bg-canvas"><div class="grid-lines"></div><div class="orb orb-1"></div><div class="orb orb-2"></div></div>
 
 <div class="wrap">
-
-  <!-- LEFT — identik login.php -->
+  <!-- LEFT -->
   <div class="left">
     <div class="brand">
       <div class="brand-icon"><i class="fa fa-desktop"></i></div>
-      <div class="brand-name"><?= defined('APP_NAME') ? htmlspecialchars(APP_NAME) : 'Fix<span>Smart</span>' ?></div>
+      <div class="brand-name"><?= defined('APP_NAME') ? htmlspecialchars(APP_NAME) : 'FixSmart' ?></div>
     </div>
     <div class="hero">
       <div class="hero-tag"><i class="fa fa-circle-dot"></i> Platform Helpdesk Terpadu</div>
@@ -310,24 +272,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="feat-item"><div class="feat-dot"></div>SLA Monitoring &amp; Dashboard Analytics</div>
       </div>
       <?php if (defined('WA_GROUP_LINK') && WA_GROUP_LINK): ?>
-      <a href="<?= htmlspecialchars(WA_GROUP_LINK) ?>" target="_blank" class="wa-btn">
+      <a href="<?= htmlspecialchars(WA_GROUP_LINK) ?>" target="_blank"
+         style="display:inline-flex;align-items:center;gap:10px;background:rgba(37,211,102,0.1);border:1px solid rgba(37,211,102,0.3);color:#25d366;padding:11px 20px;border-radius:10px;font-size:13px;font-weight:600;text-decoration:none;">
         <i class="fab fa-whatsapp"></i> Gabung Grup WhatsApp
       </a>
       <?php endif; ?>
     </div>
     <div class="left-footer">
-      <div class="copyright">&copy; <?= date('Y') ?>
-        <?php if (defined('APP_OWNER')): ?><a href="#"><?= htmlspecialchars(APP_OWNER) ?></a>
-        <?php else: ?><a href="#">FixSmart</a><?php endif; ?>
-        &mdash; All rights reserved.
-      </div>
+      <div class="copyright">&copy; <?= date('Y') ?> <a href="#"><?= defined('APP_OWNER') ? htmlspecialchars(APP_OWNER) : 'FixSmart' ?></a></div>
     </div>
   </div>
 
   <!-- RIGHT -->
   <div class="right">
     <div class="right-inner">
-
       <?php if ($success): ?>
       <div class="success-card">
         <div class="success-icon"><i class="fa fa-check"></i></div>
@@ -367,21 +325,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
           </div>
           <div class="fg">
-            <label>NIK <span style="font-size:9px;font-weight:400;text-transform:none;letter-spacing:0;">(Nomor Induk Karyawan)</span></label>
+            <label>NIK RS <span class="req">*</span> <span style="font-size:9px;font-weight:400;text-transform:none;letter-spacing:0;">(Nomor Induk Karyawan)</span></label>
             <div class="iw">
               <i class="fa fa-id-badge ic"></i>
-              <input type="text" name="nik" placeholder="Contoh: 101001..."
-                     value="<?= clean($_POST['nik'] ?? '') ?>" maxlength="30">
+              <input type="text" name="nik" placeholder="Nomor internal RS..."
+                     value="<?= clean($_POST['nik'] ?? '') ?>" maxlength="30" required>
             </div>
-            <div class="field-hint"><i class="fa fa-circle-info"></i> Opsional, bisa dilengkapi nanti</div>
+            <div class="field-hint"><i class="fa fa-circle-info"></i> Wajib diisi — bukan NIK KTP 16 digit</div>
           </div>
         </div>
 
-        <div class="fg">
+        <!-- Info perbedaan NIK -->
+        <div class="nik-info">
+          <i class="fa fa-circle-info"></i>
+          <div>
+            <table>
+              <tr><td>NIK RS</td><td>Nomor Induk Karyawan dari rumah sakit (isi di sini)</td></tr>
+              <tr><td>NIK KTP</td><td>No. identitas 16 digit — diisi nanti di Data Kepegawaian</td></tr>
+            </table>
+          </div>
+        </div>
+
+        <div class="fg" style="margin-top:10px;">
           <label>Email <span class="req">*</span></label>
           <div class="iw">
             <i class="fa fa-envelope ic"></i>
-            <input type="email" name="email" placeholder="email@perusahaan.com"
+            <input type="email" name="email" placeholder="email@.com"
                    value="<?= clean($_POST['email'] ?? '') ?>">
           </div>
           <div class="field-hint"><i class="fa fa-circle-info"></i> Email digunakan untuk login</div>
@@ -395,37 +364,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               <select name="divisi">
                 <option value="">-- Pilih Divisi --</option>
                 <?php foreach ($divisi_list as $d): ?>
-                <option value="<?= clean($d['nama']) ?>"
-                  <?= (($_POST['divisi'] ?? '') === $d['nama']) ? 'selected' : '' ?>>
-                  <?= clean($d['nama']) ?><?= $d['kode'] ? ' (' . $d['kode'] . ')' : '' ?><?= !empty($d['lokasi']) ? ' — ' . $d['lokasi'] : '' ?>
+                <option value="<?= clean($d['nama']) ?>" <?= (($_POST['divisi'] ?? '') === $d['nama']) ? 'selected' : '' ?>>
+                  <?= clean($d['nama']) ?><?= $d['kode'] ? ' (' . $d['kode'] . ')' : '' ?>
                 </option>
                 <?php endforeach; ?>
               </select>
             </div>
           </div>
           <div class="fg">
-            <label>Jabatan</label>
+            <label>No. HP / WhatsApp</label>
             <div class="iw">
-              <i class="fa fa-briefcase ic"></i>
-              <select name="jabatan_id">
-                <option value="">-- Pilih Jabatan --</option>
-                <?php foreach ($jabatan_list as $jb): ?>
-                <option value="<?= (int)$jb['id'] ?>"
-                  <?= ((int)($_POST['jabatan_id'] ?? 0) === (int)$jb['id']) ? 'selected' : '' ?>>
-                  <?= clean($jb['nama']) ?><?= $jb['kode'] ? ' (' . $jb['kode'] . ')' : '' ?>
-                </option>
-                <?php endforeach; ?>
-              </select>
+              <i class="fa fa-phone ic"></i>
+              <input type="text" name="no_hp" placeholder="08xx..."
+                     value="<?= clean($_POST['no_hp'] ?? '') ?>">
             </div>
-          </div>
-        </div>
-
-        <div class="fg">
-          <label>No. HP / WhatsApp</label>
-          <div class="iw">
-            <i class="fa fa-phone ic"></i>
-            <input type="text" name="no_hp" placeholder="08xx..."
-                   value="<?= clean($_POST['no_hp'] ?? '') ?>">
           </div>
         </div>
 
@@ -439,12 +391,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <label>Password <span class="req">*</span></label>
             <div class="iw">
               <i class="fa fa-lock ic"></i>
-              <input type="password" name="password" id="pw1"
-                     placeholder="Min. 6 karakter..."
+              <input type="password" name="password" id="pw1" placeholder="Min. 6 karakter..."
                      oninput="checkStr(this.value)" autocomplete="new-password">
-              <button type="button" class="eye" onclick="tog('pw1','e1')">
-                <i class="fa fa-eye" id="e1"></i>
-              </button>
+              <button type="button" class="eye" onclick="tog('pw1','e1')"><i class="fa fa-eye" id="e1"></i></button>
             </div>
             <div class="str-bar"><div class="str-fill" id="str-fill"></div></div>
             <div class="str-lbl" id="str-lbl"></div>
@@ -453,12 +402,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <label>Konfirmasi Password <span class="req">*</span></label>
             <div class="iw">
               <i class="fa fa-lock ic"></i>
-              <input type="password" name="confirm" id="pw2"
-                     placeholder="Ulangi password..."
+              <input type="password" name="confirm" id="pw2" placeholder="Ulangi password..."
                      oninput="checkMatch()" autocomplete="new-password">
-              <button type="button" class="eye" onclick="tog('pw2','e2')">
-                <i class="fa fa-eye" id="e2"></i>
-              </button>
+              <button type="button" class="eye" onclick="tog('pw2','e2')"><i class="fa fa-eye" id="e2"></i></button>
             </div>
             <div class="match-hint" id="match-hint"></div>
           </div>
@@ -470,8 +416,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <div class="captcha-row">
             <div class="captcha-soal"><?= htmlspecialchars($captcha_soal) ?></div>
             <div class="captcha-eq">=</div>
-            <input type="number" name="captcha" class="captcha-input"
-                   placeholder="?" required autocomplete="off" min="0" max="99">
+            <input type="number" name="captcha" class="captcha-input" placeholder="?" required autocomplete="off" min="0" max="99">
           </div>
         </div>
 
@@ -483,11 +428,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       <div class="divider"><span>sudah punya akun?</span></div>
       <div class="switch-link"><a href="<?= APP_URL ?>/login.php">← Masuk di sini</a></div>
-
     </div>
   </div>
-
 </div>
+
 <script>
 function tog(id, ic) {
   var e=document.getElementById(id), i=document.getElementById(ic);
@@ -496,13 +440,13 @@ function tog(id, ic) {
 }
 function checkStr(v) {
   var s=0;
-  if(v.length>=6) s++; if(v.length>=10) s++;
-  if(/[A-Z]/.test(v)) s++; if(/[0-9]/.test(v)) s++; if(/[^a-zA-Z0-9]/.test(v)) s++;
+  if(v.length>=6)s++; if(v.length>=10)s++;
+  if(/[A-Z]/.test(v))s++; if(/[0-9]/.test(v))s++; if(/[^a-zA-Z0-9]/.test(v))s++;
   var lvl=[
     {w:'20%',c:'#ff4d6d',t:'Sangat Lemah'},{w:'40%',c:'#f97316',t:'Lemah'},
     {w:'60%',c:'#f59e0b',t:'Cukup'},{w:'80%',c:'#00c896',t:'Kuat'},{w:'100%',c:'#00e5b0',t:'Sangat Kuat'}
   ];
-  var f=document.getElementById('str-fill'), l=document.getElementById('str-lbl');
+  var f=document.getElementById('str-fill'),l=document.getElementById('str-lbl');
   if(!v.length){f.style.width='0';l.textContent='';return;}
   var idx=Math.max(0,Math.min(s-1,4));
   f.style.width=lvl[idx].w; f.style.background=lvl[idx].c;
@@ -511,10 +455,10 @@ function checkStr(v) {
 function checkMatch() {
   var p1=document.getElementById('pw1').value,
       p2=document.getElementById('pw2').value,
-      h =document.getElementById('match-hint');
+      h=document.getElementById('match-hint');
   if(!p2){h.textContent='';return;}
-  if(p1===p2){h.textContent='✅ Password cocok'; h.style.color='#00e5b0';}
-  else       {h.textContent='❌ Tidak cocok';    h.style.color='#ff4d6d';}
+  if(p1===p2){h.textContent='✅ Password cocok';h.style.color='#00e5b0';}
+  else       {h.textContent='❌ Tidak cocok';   h.style.color='#ff4d6d';}
 }
 </script>
 </body>

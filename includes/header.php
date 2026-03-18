@@ -211,10 +211,23 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
     <div style="min-width:0;">
       <div class="sb-user-name"><?= clean($_SESSION['user_nama']) ?></div>
       <?php
-      $_role_map = ['admin'=>'Admin','teknisi'=>'Teknisi IT','teknisi_ipsrs'=>'Teknisi IPSRS','hrd'=>'HRD','user'=>'User'];
+      $_role_map = [
+        'admin'         => 'Admin',
+        'teknisi'       => 'Teknisi IT',
+        'teknisi_ipsrs' => 'Teknisi IPSRS',
+        'hrd'           => 'HRD',
+        'akreditasi'    => 'Tim Akreditasi',
+        'user'          => 'User',
+      ];
       $_role_display = $_role_map[$_SESSION['user_role']] ?? ucfirst($_SESSION['user_role']);
       ?>
-      <div class="sb-user-role"><?= $_role_display ?> &mdash; <?= clean($_SESSION['user_divisi'] ?? '-') ?></div>
+      <div class="sb-user-role">
+        <?= $_role_display ?>
+        <?php if ((int)($_SESSION['is_akreditasi'] ?? 0) === 1): ?>
+        &nbsp;<span style="background:rgba(217,119,6,.2);color:#fbbf24;font-size:8.5px;font-weight:800;padding:1px 5px;border-radius:4px;letter-spacing:.3px;">+ AKREDITASI</span>
+        <?php endif; ?>
+        &mdash; <?= clean($_SESSION['user_divisi'] ?? '-') ?>
+      </div>
     </div>
   </div>
 
@@ -224,18 +237,19 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   // CAPABILITY FLAGS — satu sumber kebenaran
   // ════════════════════════════════════════════════════════
   $_cur_role   = $_SESSION['user_role'] ?? 'user';
-  $_uid        = (int)($_SESSION['user_id'] ?? 0);
+  $_uid        = (int)($_SESSION['user_id']  ?? 0);
+  $_pokja_id   = (int)($_SESSION['pokja_id'] ?? 0);
   $active_menu = $active_menu ?? '';
 
-  // Akses "pengelola" tiket (bisa lihat antrian, semua tiket, SLA)
+  // Akses tiket
   $_can_manage_tiket_it    = in_array($_cur_role, ['admin','teknisi']);
   $_can_manage_tiket_ipsrs = in_array($_cur_role, ['admin','teknisi_ipsrs']);
 
   // Akses aset & maintenance
-  $_can_manage_aset_it     = in_array($_cur_role, ['admin','teknisi']);
-  $_can_manage_aset_ipsrs  = in_array($_cur_role, ['admin','teknisi_ipsrs']);
+  $_can_manage_aset_it    = in_array($_cur_role, ['admin','teknisi']);
+  $_can_manage_aset_ipsrs = in_array($_cur_role, ['admin','teknisi_ipsrs']);
 
-  // Akses management karyawan / absensi semua (admin + hrd)
+  // Akses management SDM / absensi semua (admin + hrd)
   $_can_management = in_array($_cur_role, ['admin','hrd']);
 
   // Master data & pengaturan (admin only)
@@ -244,24 +258,29 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   // Berita acara (admin + teknisi)
   $_can_berita_acara = in_array($_cur_role, ['admin','teknisi']);
 
-  // ── Badge counts ─────────────────────────────────────────────────
-  // Tiket IT menunggu (untuk pengelola)
+  // Akreditasi: admin, role akreditasi, ATAU role lain yang punya flag is_akreditasi=1
+  $_is_akreditasi_flag = (int)($_SESSION['is_akreditasi'] ?? 0) === 1;
+  $_can_akreditasi = in_array($_cur_role, ['admin','akreditasi']) || $_is_akreditasi_flag;
+
+  // ── Badge counts ──────────────────────────────────────────────────────────
+
+  // Tiket IT menunggu
   $cnt_menunggu = 0;
   if ($_can_manage_tiket_it) {
       $cnt_menunggu = (int)$pdo->query("SELECT COUNT(*) FROM tiket WHERE status='menunggu'")->fetchColumn();
   }
-  // Tiket IT aktif milik saya sendiri (untuk semua role)
+  // Tiket IT aktif milik saya
   $cnt_tiket_saya = 0;
   $s2 = $pdo->prepare("SELECT COUNT(*) FROM tiket WHERE user_id=? AND status IN ('menunggu','diproses')");
   $s2->execute([$_uid]);
   $cnt_tiket_saya = (int)$s2->fetchColumn();
 
-  // Tiket IPSRS menunggu (untuk pengelola)
+  // Tiket IPSRS menunggu
   $cnt_ipsrs_menunggu = 0;
   if ($_can_manage_tiket_ipsrs) {
       try { $cnt_ipsrs_menunggu = (int)$pdo->query("SELECT COUNT(*) FROM tiket_ipsrs WHERE status='menunggu'")->fetchColumn(); } catch(Exception $e) {}
   }
-  // Tiket IPSRS aktif milik saya sendiri (untuk semua role)
+  // Tiket IPSRS aktif milik saya
   $cnt_ipsrs_saya = 0;
   try {
       $s3 = $pdo->prepare("SELECT COUNT(*) FROM tiket_ipsrs WHERE user_id=? AND status IN ('menunggu','diproses')");
@@ -269,7 +288,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       $cnt_ipsrs_saya = (int)$s3->fetchColumn();
   } catch(Exception $e) {}
 
-  // Maintenance IT urgent
+  // Maintenance IT urgent (7 hari ke depan)
   $cnt_mnt_it = 0;
   if ($_can_manage_aset_it) {
       try { $cnt_mnt_it = (int)$pdo->query("SELECT COUNT(DISTINCT aset_id) FROM maintenance_it WHERE id IN (SELECT MAX(id) FROM maintenance_it GROUP BY aset_id) AND tgl_maintenance_berikut BETWEEN CURDATE() AND DATE_ADD(CURDATE(),INTERVAL 7 DAY)")->fetchColumn(); } catch(Exception $e) {}
@@ -294,7 +313,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   if ($_can_management) {
       try { $cnt_belum_absen = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE status='aktif' AND id NOT IN (SELECT user_id FROM absensi WHERE DATE(tanggal)=CURDATE())")->fetchColumn(); } catch(Exception $e) {}
   }
-  // Sudah absen hari ini? (semua role)
+  // Sudah absen hari ini?
   $sudah_absen = false;
   try {
       $sa = $pdo->prepare("SELECT COUNT(*) FROM absensi WHERE user_id=? AND DATE(tanggal)=CURDATE()");
@@ -302,7 +321,22 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       $sudah_absen = (int)$sa->fetchColumn() > 0;
   } catch(Exception $e) {}
 
-  // ── Active group flags ───────────────────────────────────────────
+  // Dokumen akreditasi segera expired (30 hari ke depan) — badge warning
+  $cnt_akreditasi_exp = 0;
+  if ($_can_akreditasi) {
+      try {
+          // Aman untuk role lain dengan is_akreditasi flag — pokja_id bisa 0 jika belum diset
+          $pokja_cond = $_is_admin ? '' : ($_pokja_id ? "AND pokja_id=$_pokja_id" : '');
+          $cnt_akreditasi_exp = (int)$pdo->query(
+              "SELECT COUNT(*) FROM dokumen_akreditasi
+               WHERE status='aktif' AND tgl_exp IS NOT NULL
+               AND tgl_exp BETWEEN CURDATE() AND DATE_ADD(CURDATE(),INTERVAL 30 DAY)
+               $pokja_cond"
+          )->fetchColumn();
+      } catch(Exception $e) {}
+  }
+
+  // ── Active group flags ────────────────────────────────────────────────────
   $grp_tiket_it    = in_array($active_menu, ['antrian','semua_tiket','sla','buat_tiket','tiket_saya']);
   $grp_tiket_ipsrs = in_array($active_menu, ['antrian_ipsrs','semua_tiket_ipsrs','sla_ipsrs','buat_tiket_sarpras','tiket_saya_ipsrs']);
   $grp_aset_it     = in_array($active_menu, ['aset_it','maintenance_it','cek_koneksi','server_room','lacak_aset','mutasi_aset']);
@@ -311,6 +345,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   $grp_master      = in_array($active_menu, ['kategori','kategori_ipsrs','bagian','users','login_log']);
   $grp_setting     = in_array($active_menu, ['setting_telegram','backup']);
   $grp_absensi     = in_array($active_menu, ['absensi_diri','laporan_absen_saya']);
+  $grp_akreditasi  = in_array($active_menu, ['master_pokja','input_dokumen','data_dokumen']);
   ?>
 
   <!-- Dashboard — SEMUA ROLE -->
@@ -319,22 +354,18 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   </div>
 
   <!-- ══════════════════════════════════════════════════════════════
-       TIKET IT — SEMUA ROLE BISA AKSES
-       Pengelola (admin/teknisi): + antrian, semua tiket, SLA
-       Semua role: buat tiket + tiket saya
+       TIKET IT — SEMUA ROLE
   ══════════════════════════════════════════════════════════════ -->
   <details class="nav-group" <?= $grp_tiket_it?'open':'' ?>>
     <summary class="nav-group-hd">
       <i class="fa fa-desktop ni-grp"></i>
       <span>Tiket IT</span>
       <?php
-      // Badge: pengelola pakai jumlah menunggu, yang lain pakai tiket aktif sendiri
       $_badge_it = $_can_manage_tiket_it ? $cnt_menunggu : $cnt_tiket_saya;
       if ($_badge_it): ?><span class="nc-grp"><?= $_badge_it ?></span><?php endif; ?>
       <i class="fa fa-chevron-down caret-grp"></i>
     </summary>
     <div class="nav-group-bd">
-
       <?php if ($_can_manage_tiket_it): ?>
       <div class="nav-item <?= $active_menu==='antrian'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/antrian.php"><i class="fa fa-inbox ni"></i><span class="nl">Antrian Tiket</span><?php if ($cnt_menunggu): ?><span class="nc"><?= $cnt_menunggu ?></span><?php endif; ?></a>
@@ -346,22 +377,17 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
         <a href="<?= APP_URL ?>/pages/sla.php"><i class="fa fa-chart-line ni"></i><span class="nl">Laporan SLA</span></a>
       </div>
       <?php endif; ?>
-
-      <!-- Buat tiket & tiket saya — SEMUA ROLE -->
       <div class="nav-item <?= $active_menu==='buat_tiket'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/buat_tiket.php"><i class="fa fa-plus-circle ni"></i><span class="nl">Buat Tiket IT</span></a>
       </div>
       <div class="nav-item <?= $active_menu==='tiket_saya'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/tiket_saya.php"><i class="fa fa-list-alt ni"></i><span class="nl">Tiket Saya</span><?php if ($cnt_tiket_saya): ?><span class="nc"><?= $cnt_tiket_saya ?></span><?php endif; ?></a>
       </div>
-
     </div>
   </details>
 
   <!-- ══════════════════════════════════════════════════════════════
-       TIKET IPSRS — SEMUA ROLE BISA AKSES
-       Pengelola (admin/teknisi_ipsrs): + antrian, semua tiket, SLA
-       Semua role: buat tiket + tiket saya
+       TIKET IPSRS — SEMUA ROLE
   ══════════════════════════════════════════════════════════════ -->
   <details class="nav-group" <?= $grp_tiket_ipsrs?'open':'' ?>>
     <summary class="nav-group-hd">
@@ -373,7 +399,6 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       <i class="fa fa-chevron-down caret-grp"></i>
     </summary>
     <div class="nav-group-bd">
-
       <?php if ($_can_manage_tiket_ipsrs): ?>
       <div class="nav-item <?= $active_menu==='antrian_ipsrs'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/antrian_ipsrs.php"><i class="fa fa-inbox ni"></i><span class="nl">Antrian IPSRS</span><?php if ($cnt_ipsrs_menunggu): ?><span class="nc"><?= $cnt_ipsrs_menunggu ?></span><?php endif; ?></a>
@@ -385,15 +410,12 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
         <a href="<?= APP_URL ?>/pages/sla_ipsrs.php"><i class="fa fa-chart-line ni"></i><span class="nl">Laporan SLA IPSRS</span></a>
       </div>
       <?php endif; ?>
-
-      <!-- Buat tiket IPSRS & tiket saya — SEMUA ROLE -->
       <div class="nav-item <?= $active_menu==='buat_tiket_sarpras'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/buat_tiket_sarpras.php"><i class="fa fa-plus-circle ni"></i><span class="nl">Buat Tiket IPSRS</span></a>
       </div>
       <div class="nav-item <?= $active_menu==='tiket_saya_ipsrs'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/tiket_saya_ipsrs.php"><i class="fa fa-list-alt ni"></i><span class="nl">Tiket IPSRS Saya</span><?php if ($cnt_ipsrs_saya): ?><span class="nc"><?= $cnt_ipsrs_saya ?></span><?php endif; ?></a>
       </div>
-
     </div>
   </details>
 
@@ -404,6 +426,48 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   <div class="nav-item <?= $active_menu==='berita_acara'?'active':'' ?>">
     <a href="<?= APP_URL ?>/pages/berita_acara.php"><i class="fa fa-file-contract ni"></i><span class="nl">Berita Acara</span></a>
   </div>
+  <?php endif; ?>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       AKREDITASI — Admin & Tim Akreditasi
+  ══════════════════════════════════════════════════════════════ -->
+  <?php if ($_can_akreditasi): ?>
+  <details class="nav-group" <?= $grp_akreditasi?'open':'' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-medal ni-grp" style="color:#d97706;"></i>
+      <span>Akreditasi</span>
+      <?php if ($cnt_akreditasi_exp): ?>
+        <span class="nc-grp" style="background:#f59e0b;"><?= $cnt_akreditasi_exp ?></span>
+      <?php endif; ?>
+      <i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+
+      <?php if ($_is_admin): ?>
+      <div class="nav-item <?= $active_menu==='master_pokja'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/master_pokja.php">
+          <i class="fa fa-layer-group ni"></i><span class="nl">Master Pokja</span>
+        </a>
+      </div>
+      <?php endif; ?>
+
+      <div class="nav-item <?= $active_menu==='input_dokumen'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/input_dokumen.php">
+          <i class="fa fa-file-arrow-up ni"></i><span class="nl">Input Dokumen</span>
+        </a>
+      </div>
+
+      <div class="nav-item <?= $active_menu==='data_dokumen'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/data_dokumen.php">
+          <i class="fa fa-folder-open ni"></i><span class="nl">Data Dokumen</span>
+          <?php if ($cnt_akreditasi_exp): ?>
+            <span class="nc" style="background:#f59e0b;"><?= $cnt_akreditasi_exp ?></span>
+          <?php endif; ?>
+        </a>
+      </div>
+
+    </div>
+  </details>
   <?php endif; ?>
 
   <!-- ══════════════════════════════════════════════════════════════
@@ -464,7 +528,6 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
 
   <!-- ══════════════════════════════════════════════════════════════
        MANAGEMENT — Admin & HRD
-       (master karyawan, jadwal, absensi, laporan absensi)
   ══════════════════════════════════════════════════════════════ -->
   <?php if ($_can_management): ?>
   <div class="sb-divider"></div>
@@ -488,9 +551,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       <div class="nav-item <?= $active_menu==='jadwal'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/master_jadwal.php"><i class="fa fa-calendar-days ni"></i><span class="nl">Jadwal</span></a>
       </div>
-      <div class="nav-item <?= $active_menu==='absensi'?'active':'' ?>">
-        <a href="<?= APP_URL ?>/pages/absensi.php"><i class="fa fa-fingerprint ni"></i><span class="nl">Data Absensi</span><?php if ($cnt_belum_absen): ?><span class="nc" style="background:#f59e0b;"><?= $cnt_belum_absen ?></span><?php endif; ?></a>
-      </div>
+    
       <div class="nav-item <?= $active_menu==='laporan_absen'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/laporan_absensi.php"><i class="fa fa-chart-bar ni"></i><span class="nl">Laporan Absensi</span></a>
       </div>
@@ -648,6 +709,14 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
     </a>
     <?php endif; ?>
 
+    <?php if ($_can_akreditasi && $cnt_akreditasi_exp): ?>
+    <a href="<?= APP_URL ?>/pages/data_dokumen.php?status=aktif" class="tn-alert-pill"
+       style="border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.07);color:#92400e;">
+      <i class="fa fa-medal" style="color:#f59e0b;"></i>
+      <span><?= $cnt_akreditasi_exp ?> dok. exp</span>
+    </a>
+    <?php endif; ?>
+
     <button onclick="openModal('m-about')" class="tn-about-btn"><i class="fa fa-circle-info"></i><span>Tentang</span></button>
 
     <div class="tn-user" id="tn-user" onclick="toggleDropdown()">
@@ -662,6 +731,9 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
           <i class="fa fa-fingerprint"></i> Absen Sekarang
           <?php if (!$sudah_absen): ?><span style="width:7px;height:7px;border-radius:50%;background:#f59e0b;display:inline-block;margin-left:4px;"></span><?php endif; ?>
         </a>
+        <?php if ($_can_akreditasi): ?>
+        <a href="<?= APP_URL ?>/pages/data_dokumen.php"><i class="fa fa-folder-open"></i> Dokumen Akreditasi</a>
+        <?php endif; ?>
         <a href="<?= APP_URL ?>/logout.php" class="red-link"><i class="fa fa-sign-out-alt"></i> Keluar</a>
       </div>
     </div>
@@ -681,8 +753,17 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       <div style="margin-top:8px;background:rgba(0,229,176,0.12);border:1px solid rgba(0,229,176,0.25);color:#00e5b0;padding:2px 12px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.5px;">Versi 1.0.0</div>
       <div style="width:100%;height:1px;background:rgba(255,255,255,.06);margin:14px 0;"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;width:100%;">
-        <?php foreach([['fa-ticket-alt','#60a5fa','Tiket'],['fa-chart-line','#a78bfa','SLA'],['fa-users','#fbbf24','Multi Role'],['fa-paper-plane','#38bdf8','Telegram'],['fa-screwdriver-wrench','#00e5b0','Maintenance'],['fa-fingerprint','#f87171','Absensi']] as [$ic,$cl,$lb]): ?>
-        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:5px;font-size:10px;color:rgba(255,255,255,.55);display:flex;align-items:center;gap:5px;"><i class="fa <?= $ic ?>" style="color:<?= $cl ?>;font-size:11px;width:13px;text-align:center;"></i><?= $lb ?></div>
+        <?php foreach([
+          ['fa-ticket-alt',        '#60a5fa', 'Tiket'],
+          ['fa-chart-line',        '#a78bfa', 'SLA'],
+          ['fa-users',             '#fbbf24', 'Multi Role'],
+          ['fa-paper-plane',       '#38bdf8', 'Telegram'],
+          ['fa-screwdriver-wrench','#00e5b0', 'Maintenance'],
+          ['fa-medal',             '#fcd34d', 'Akreditasi'],
+        ] as [$ic,$cl,$lb]): ?>
+        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:5px;font-size:10px;color:rgba(255,255,255,.55);display:flex;align-items:center;gap:5px;">
+          <i class="fa <?= $ic ?>" style="color:<?= $cl ?>;font-size:11px;width:13px;text-align:center;"></i><?= $lb ?>
+        </div>
         <?php endforeach; ?>
       </div>
       <div style="width:100%;height:1px;background:rgba(255,255,255,.06);margin:14px 0;"></div>
@@ -698,14 +779,17 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
         <button onclick="closeModal('m-about')" style="width:26px;height:26px;border-radius:50%;background:#f3f4f6;border:none;cursor:pointer;color:#9ca3af;font-size:12px;display:flex;align-items:center;justify-content:center;transition:all .18s;" onmouseover="this.style.background='#ff4d6d';this.style.color='#fff';" onmouseout="this.style.background='#f3f4f6';this.style.color='#9ca3af';"><i class="fa fa-times"></i></button>
       </div>
       <div style="flex:1;padding:14px 16px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;">
-        <p style="font-size:11.5px;color:#64748b;line-height:1.75;margin:0;">Sistem manajemen tiket IT berbasis web untuk membantu pengelolaan <em>work order</em>, pelacakan SLA, manajemen aset &amp; absensi, dan pelaporan kinerja tim IT.</p>
+        <p style="font-size:11.5px;color:#64748b;line-height:1.75;margin:0;">Sistem manajemen tiket IT berbasis web untuk membantu pengelolaan <em>work order</em>, pelacakan SLA, manajemen aset &amp; absensi, dokumen akreditasi, dan pelaporan kinerja tim IT.</p>
         <div style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);border:1px solid #a7f3d0;border-radius:9px;padding:10px 12px;display:flex;align-items:center;gap:10px;">
           <div style="width:32px;height:32px;background:#00e5b0;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="fa fa-gift" style="color:#0a0f14;font-size:13px;"></i></div>
           <div><div style="font-size:12px;font-weight:700;color:#065f46;">Aplikasi 100% Gratis</div><div style="font-size:10.5px;color:#059669;margin-top:1px;line-height:1.5;">Bebas digunakan &amp; dimodifikasi. <strong>Dilarang diperjualbelikan.</strong></div></div>
         </div>
         <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:11px 12px;">
           <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;"><i class="fa fa-heart" style="color:#ff4d6d;font-size:13px;"></i><span style="font-size:12px;font-weight:700;color:#92400e;">Dukung Pengembangan</span><span style="font-size:10px;color:#a16207;margin-left:auto;">Sukarela</span></div>
-          <?php foreach([['#6c3db5','fa fa-wallet','GOPAY / DANA','0821 7784 6209','0821 7784 6209'],['#00703c','','Bank BSI','7134197557','7134197557']] as [$bg,$ic,$lbl,$display,$copy]): ?>
+          <?php foreach([
+            ['#6c3db5','fa fa-wallet','GOPAY / DANA','0821 7784 6209','0821 7784 6209'],
+            ['#00703c','','Bank BSI','7134197557','7134197557'],
+          ] as [$bg,$ic,$lbl,$display,$copy]): ?>
           <div style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #fde68a;border-radius:6px;padding:7px 9px;margin-bottom:6px;">
             <div style="width:24px;height:24px;border-radius:5px;background:<?= $bg ?>;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><?php if($ic):?><i class="<?=$ic?>" style="color:#fff;font-size:10px;"></i><?php else:?><span style="color:#fff;font-size:8px;font-weight:900;">BSI</span><?php endif;?></div>
             <div style="flex:1;min-width:0;"><div style="font-size:10px;font-weight:600;color:#6b7280;"><?=$lbl?></div><div style="font-size:11px;color:#1e293b;font-family:monospace;"><?=$display?></div></div>
