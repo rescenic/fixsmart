@@ -396,12 +396,12 @@ include '../includes/header.php';
   background: #fff; border-radius: 14px;
   box-shadow: 0 24px 80px rgba(0,0,0,.3);
   width: 100%; max-width: 820px;
-  height: 88vh;
-  min-height: 500px;
+  height: 86vh;          /* tinggi TETAP — konsisten semua tab */
+  min-height: 520px;
   max-height: 92vh;
   display: flex; flex-direction: column;
   animation: sdmIn .22s ease;
-  overflow: hidden;   /* modal container tidak scroll */
+  overflow: hidden;
   position: relative;
 }
 @keyframes sdmIn {
@@ -444,9 +444,11 @@ include '../includes/header.php';
 .sdm-tab:hover:not(.active) { color:#374151; background:#f3f4f6; }
 .sdm-mbody {
   flex: 1;
-  overflow-y: auto;   /* HANYA mbody yang scroll */
-  min-height: 0;      /* penting agar flex tidak overflow */
+  overflow-y: auto;
+  min-height: 0;
   overscroll-behavior: contain;
+  /* Batasi tinggi mbody agar mft selalu terlihat */
+  max-height: calc(90vh - 180px); /* 180px = info-bar + tabs + mft */
 }
 .sdm-tab-pane { display:none; padding:18px 22px; }
 .sdm-tab-pane.active { display:block; }
