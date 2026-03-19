@@ -9,28 +9,6 @@ $uid      = (int)$_SESSION['user_id'];
 $tgl_hari = date('Y-m-d');
 $jam_skrg = date('H:i:s');
 
-// ── Pastikan kolom absensi ada (ALTER safe) ───────────────
-$absensi_cols_needed = [
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `terlambat_menit`   SMALLINT      NOT NULL DEFAULT 0 AFTER `status`",
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `pulang_awal_menit` SMALLINT      NOT NULL DEFAULT 0 AFTER `terlambat_menit`",
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `durasi_kerja`      SMALLINT      DEFAULT NULL AFTER `pulang_awal_menit`",
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `keterangan`        VARCHAR(255)  DEFAULT NULL AFTER `durasi_kerja`",
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `foto_masuk`        VARCHAR(255)  DEFAULT NULL AFTER `keterangan`",
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `foto_keluar`       VARCHAR(255)  DEFAULT NULL AFTER `foto_masuk`",
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `device_info`       VARCHAR(255)  DEFAULT NULL AFTER `foto_keluar`",
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `lat_masuk`         DECIMAL(10,7) DEFAULT NULL AFTER `device_info`",
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `lon_masuk`         DECIMAL(10,7) DEFAULT NULL AFTER `lat_masuk`",
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `lat_keluar`        DECIMAL(10,7) DEFAULT NULL AFTER `lon_masuk`",
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `lon_keluar`        DECIMAL(10,7) DEFAULT NULL AFTER `lat_keluar`",
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `input_oleh`        VARCHAR(10)   DEFAULT 'admin' AFTER `lon_keluar`",
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `shift_id`          INT UNSIGNED  DEFAULT NULL AFTER `input_oleh`",
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `created_by`        INT UNSIGNED  DEFAULT NULL AFTER `shift_id`",
-    "ALTER TABLE `absensi` ADD COLUMN IF NOT EXISTS `updated_by`        INT UNSIGNED  DEFAULT NULL AFTER `created_by`",
-];
-foreach ($absensi_cols_needed as $sql) {
-    try { $pdo->exec($sql); } catch(Exception $e) {}
-}
-
 // ── Debug endpoint ────────────────────────────────────────
 if (isset($_GET['debug'])) {
     while (ob_get_level()) ob_end_clean();
@@ -76,8 +54,13 @@ if (isset($_POST['ajax_absen_kamera'])) {
     $lat      = isset($_POST['lat']) && is_numeric($_POST['lat']) ? (float)$_POST['lat'] : null;
     $lon      = isset($_POST['lon']) && is_numeric($_POST['lon']) ? (float)$_POST['lon'] : null;
 
+    // ── Wajib foto dari kamera (bukan upload) ────────────
+    if (empty($foto_b64) || strpos($foto_b64, 'data:image/') !== 0) {
+        echo json_encode(['ok'=>false,'msg'=>'Foto wajib diambil langsung dari kamera.']);
+        exit;
+    }
+
     // ── Validasi lokasi dari jadwal karyawan ─────────────
-    // Ambil lokasi_id yang di-assign di jadwal hari ini
     if ($lat && $lon) {
         try {
             $qlok = $pdo->prepare("
@@ -92,7 +75,6 @@ if (isset($_POST['ajax_absen_kamera'])) {
             $lok = $qlok->fetch(PDO::FETCH_ASSOC);
 
             if ($lok) {
-                // Haversine
                 $R    = 6371000;
                 $dLat = deg2rad($lat - (float)$lok['lat']);
                 $dLon = deg2rad($lon - (float)$lok['lon']);
@@ -114,7 +96,6 @@ if (isset($_POST['ajax_absen_kamera'])) {
                     exit;
                 }
             }
-            // Jika lokasi_id = NULL di jadwal → tidak ada batasan lokasi → izinkan
         } catch(Exception $e) {
             // Tabel belum ada / kolom belum ada → bypass
         }
@@ -122,16 +103,14 @@ if (isset($_POST['ajax_absen_kamera'])) {
 
     // ── Simpan foto ──────────────────────────────────────
     $foto_path = null;
-    if ($foto_b64 && strpos($foto_b64, 'data:image/') === 0) {
-        $foto_dir = dirname(__DIR__) . '/uploads/absensi/' . date('Y/m');
-        if (!is_dir($foto_dir)) @mkdir($foto_dir, 0755, true);
-        if (is_dir($foto_dir)) {
-            $fname    = 'absen_' . $uid . '_' . $tipe . '_' . date('Ymd_His') . '.jpg';
-            $b64clean = preg_replace('#^data:image/[a-z]+;base64,#i', '', $foto_b64);
-            $img_data = base64_decode($b64clean, true);
-            if ($img_data && @file_put_contents($foto_dir.'/'.$fname, $img_data) !== false) {
-                $foto_path = 'uploads/absensi/' . date('Y/m') . '/' . $fname;
-            }
+    $foto_dir = dirname(__DIR__) . '/uploads/absensi/' . date('Y/m');
+    if (!is_dir($foto_dir)) @mkdir($foto_dir, 0755, true);
+    if (is_dir($foto_dir)) {
+        $fname    = 'absen_' . $uid . '_' . $tipe . '_' . date('Ymd_His') . '.jpg';
+        $b64clean = preg_replace('#^data:image/[a-z]+;base64,#i', '', $foto_b64);
+        $img_data = base64_decode($b64clean, true);
+        if ($img_data && @file_put_contents($foto_dir.'/'.$fname, $img_data) !== false) {
+            $foto_path = 'uploads/absensi/' . date('Y/m') . '/' . $fname;
         }
     }
 
@@ -369,6 +348,23 @@ include '../includes/header.php';
 .ak-model-load .spin { width:32px;height:32px;border:3px solid rgba(255,255,255,.1);border-top-color:#00e5b0;border-radius:50%;animation:akspin .7s linear infinite; }
 @keyframes akspin { to{transform:rotate(360deg);} }
 .ak-model-load .msg { font-size:12px;color:rgba(255,255,255,.6);font-weight:500; }
+
+/* Pesan kamera tidak tersedia */
+.ak-cam-unavail {
+    display:none;
+    flex-direction:column;align-items:center;justify-content:center;
+    gap:14px;padding:36px 24px;background:#f8fafc;
+    border-top:1px solid #e2e8f0;text-align:center;
+}
+.ak-cam-unavail-icon {
+    width:64px;height:64px;border-radius:16px;
+    background:#fee2e2;display:flex;align-items:center;justify-content:center;
+    margin:0 auto;
+}
+.ak-cam-unavail-icon i { font-size:26px;color:#ef4444; }
+.ak-cam-unavail-title { font-size:14px;font-weight:800;color:#0f172a; }
+.ak-cam-unavail-desc  { font-size:12px;color:#64748b;line-height:1.65;max-width:280px; }
+
 .ak-cam-footer { padding:14px 16px;display:flex;gap:10px;border-top:1px solid #f0f2f7;border-radius:0 0 14px 14px;background:#fff; }
 .ak-btn-absen { flex:1;height:48px;border-radius:10px;border:none;font-size:13.5px;font-weight:800;font-family:'Inter',sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s;letter-spacing:.2px; }
 .ak-btn-masuk  { background:linear-gradient(135deg,#00c896,#00a874);color:#fff; }
@@ -587,59 +583,45 @@ include '../includes/header.php';
             </div>
         </div>
 
-        <div class="ak-video-wrap">
-            <div id="ak-video-wrap-inner">
-                <video id="ak-video" autoplay playsinline muted></video>
-                <canvas id="ak-canvas"></canvas>
-                <div class="ak-model-load" id="ak-model-load">
-                    <div class="spin"></div>
-                    <div class="msg" id="ak-load-msg">Memuat sistem deteksi wajah…</div>
+        <div class="ak-video-wrap" id="ak-video-wrap">
+            <video id="ak-video" autoplay playsinline muted></video>
+            <canvas id="ak-canvas"></canvas>
+            <div class="ak-model-load" id="ak-model-load">
+                <div class="spin"></div>
+                <div class="msg" id="ak-load-msg">Memuat sistem deteksi wajah…</div>
+            </div>
+            <div class="ak-cam-overlay">
+                <div class="ak-face-guide" id="ak-face-guide">
+                    <div class="ak-scan-line"></div>
                 </div>
-                <div class="ak-cam-overlay">
-                    <div class="ak-face-guide" id="ak-face-guide">
-                        <div class="ak-scan-line"></div>
-                    </div>
-                    <div class="ak-face-status waiting" id="ak-face-status">Arahkan wajah ke kamera</div>
-                </div>
-                <div class="ak-countdown-wrap" id="ak-countdown-wrap">
-                    <svg class="ak-countdown-ring" viewBox="0 0 44 44">
-                        <circle class="bg" cx="22" cy="22" r="19"/>
-                        <circle class="fg" id="ak-ring-fg" cx="22" cy="22" r="19" stroke-dashoffset="0"/>
-                    </svg>
-                    <div class="ak-countdown-num" id="ak-countdown-num">3</div>
-                </div>
-                <div class="ak-snap-preview" id="ak-snap-preview">
-                    <img id="ak-snap-img" src="" alt="Foto absen">
-                    <div class="ak-snap-ok" id="ak-snap-ok">
-                        <i class="fa fa-circle-check"></i>
-                        <span id="ak-snap-msg">Absen berhasil!</span>
-                    </div>
+                <div class="ak-face-status waiting" id="ak-face-status">Arahkan wajah ke kamera</div>
+            </div>
+            <div class="ak-countdown-wrap" id="ak-countdown-wrap">
+                <svg class="ak-countdown-ring" viewBox="0 0 44 44">
+                    <circle class="bg" cx="22" cy="22" r="19"/>
+                    <circle class="fg" id="ak-ring-fg" cx="22" cy="22" r="19" stroke-dashoffset="0"/>
+                </svg>
+                <div class="ak-countdown-num" id="ak-countdown-num">3</div>
+            </div>
+            <div class="ak-snap-preview" id="ak-snap-preview">
+                <img id="ak-snap-img" src="" alt="Foto absen">
+                <div class="ak-snap-ok" id="ak-snap-ok">
+                    <i class="fa fa-circle-check"></i>
+                    <span id="ak-snap-msg">Absen berhasil!</span>
                 </div>
             </div>
         </div>
 
-        <!-- Fallback upload foto -->
-        <div id="ak-fallback-wrap" style="display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px 20px;background:#f8fafc;border-top:1px solid #e2e8f0;">
-            <div style="text-align:center;">
-                <div style="width:56px;height:56px;border-radius:14px;background:#fef3c7;display:flex;align-items:center;justify-content:center;margin:0 auto 10px;">
-                    <i class="fa fa-triangle-exclamation" style="font-size:22px;color:#f59e0b;"></i>
-                </div>
-                <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:4px;">Kamera tidak tersedia</div>
-                <div style="font-size:11.5px;color:#64748b;line-height:1.6;">Kamera memerlukan <strong>HTTPS</strong>.<br>Gunakan mode upload foto sebagai bukti absen.</div>
+        <!-- Pesan kamera tidak tersedia — TIDAK ADA fallback upload -->
+        <div class="ak-cam-unavail" id="ak-cam-unavail">
+            <div class="ak-cam-unavail-icon">
+                <i class="fa fa-camera-slash"></i>
             </div>
-            <?php foreach(['masuk'=>['#10b981','Absen Masuk'],'keluar'=>['#f59e0b','Absen Keluar']] as $t=>[$clr,$lbl]): ?>
-            <div style="width:100%;max-width:320px;">
-                <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;"><?= $lbl ?></div>
-                <label for="ak-fallback-file-<?=$t?>" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:44px;border:1.5px dashed #cbd5e1;border-radius:9px;background:#fff;cursor:pointer;font-size:12.5px;font-weight:600;color:#64748b;">
-                    <i class="fa fa-camera" style="font-size:14px;"></i>
-                    <span id="ak-fb-<?=$t?>-lbl">Ambil / Pilih Foto</span>
-                </label>
-                <input type="file" id="ak-fallback-file-<?=$t?>" accept="image/*" capture="user" style="display:none;" onchange="previewFallback(this,'<?=$t?>')">
-                <div id="ak-fb-<?=$t?>-preview" style="display:none;margin-top:8px;text-align:center;">
-                    <img style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:2px solid <?=$clr?>;" id="ak-fb-<?=$t?>-img" src="" alt="">
-                </div>
+            <div class="ak-cam-unavail-title">Kamera Tidak Dapat Dibuka</div>
+            <div class="ak-cam-unavail-desc">
+                Absensi hanya bisa dilakukan dengan foto langsung dari kamera.<br>
+                Pastikan Anda mengakses halaman ini via <strong>HTTPS</strong> dan mengizinkan akses kamera di browser.
             </div>
-            <?php endforeach; ?>
         </div>
 
         <div class="ak-cam-footer">
@@ -738,27 +720,29 @@ const SUDAH_IN  = <?= ($absen_hari&&$absen_hari['jam_masuk'])  ? 'true':'false' 
 const SUDAH_OUT = <?= ($absen_hari&&$absen_hari['jam_keluar']) ? 'true':'false' ?>;
 const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
 
-let stream=null,detecting=false,faceDetected=false;
+let stream=null,detecting=false,faceDetected=false,cameraReady=false;
 let countdownAct=false,countdownSec=3,countdownTmr=null,pendingTipe=null;
 let geoLat=null,geoLon=null;
 
-const video      = document.getElementById('ak-video');
-const canvas     = document.getElementById('ak-canvas');
-const modelLoad  = document.getElementById('ak-model-load');
-const loadMsg    = document.getElementById('ak-load-msg');
-const faceGuide  = document.getElementById('ak-face-guide');
-const faceStatus = document.getElementById('ak-face-status');
-const countWrap  = document.getElementById('ak-countdown-wrap');
-const countNum   = document.getElementById('ak-countdown-num');
-const ringFg     = document.getElementById('ak-ring-fg');
-const snapPrev   = document.getElementById('ak-snap-preview');
-const snapImg    = document.getElementById('ak-snap-img');
-const snapOk     = document.getElementById('ak-snap-ok');
-const snapMsg    = document.getElementById('ak-snap-msg');
-const btnMasuk   = document.getElementById('btn-masuk');
-const btnKeluar  = document.getElementById('btn-keluar');
-const faceCountEl= document.getElementById('ak-face-count');
-const camDot     = document.getElementById('ak-cam-status-dot');
+const video       = document.getElementById('ak-video');
+const canvas      = document.getElementById('ak-canvas');
+const modelLoad   = document.getElementById('ak-model-load');
+const loadMsg     = document.getElementById('ak-load-msg');
+const faceGuide   = document.getElementById('ak-face-guide');
+const faceStatus  = document.getElementById('ak-face-status');
+const countWrap   = document.getElementById('ak-countdown-wrap');
+const countNum    = document.getElementById('ak-countdown-num');
+const ringFg      = document.getElementById('ak-ring-fg');
+const snapPrev    = document.getElementById('ak-snap-preview');
+const snapImg     = document.getElementById('ak-snap-img');
+const snapOk      = document.getElementById('ak-snap-ok');
+const snapMsg     = document.getElementById('ak-snap-msg');
+const btnMasuk    = document.getElementById('btn-masuk');
+const btnKeluar   = document.getElementById('btn-keluar');
+const faceCountEl = document.getElementById('ak-face-count');
+const camDot      = document.getElementById('ak-cam-status-dot');
+const camUnavail  = document.getElementById('ak-cam-unavail');
+const videoWrap   = document.getElementById('ak-video-wrap');
 
 /* Jam live */
 (function tick(){
@@ -772,25 +756,33 @@ const camDot     = document.getElementById('ak-cam-status-dot');
 if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(
         function(p){ geoLat=p.coords.latitude; geoLon=p.coords.longitude; },
-        function(){}, // error callback (diabaikan)
+        function(){},
         { timeout:5000 }
     );
 }
 
 function isCameraSupported(){ return !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia); }
-function isHttps(){ return location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1'; }
 
-function activateFallbackMode(){
+/* Kamera tidak tersedia → tampilkan pesan, nonaktifkan tombol */
+function showCameraUnavailable(reason){
     modelLoad.style.display='none';
-    document.getElementById('ak-video-wrap-inner').style.display='none';
-    document.getElementById('ak-fallback-wrap').style.display='flex';
-    camDot.style.background='#f59e0b';
-    faceDetected=true;
-    faceCountEl.textContent='Mode upload foto';
+    videoWrap.style.display='none';
+    camUnavail.style.display='flex';
+    camDot.style.background='#ef4444';
+    faceCountEl.textContent='Kamera tidak tersedia';
+    // Nonaktifkan kedua tombol absen
+    btnMasuk.disabled=true;
+    btnKeluar.disabled=true;
+    btnMasuk.innerHTML='<i class="fa fa-camera-slash"></i> Kamera Diperlukan';
+    btnKeluar.innerHTML='<i class="fa fa-camera-slash"></i> Kamera Diperlukan';
+    console.warn('[AbsenKamera] Kamera tidak tersedia:', reason);
 }
 
 async function loadModels(){
-    if(!isCameraSupported()){ loadMsg.innerHTML='Kamera tidak didukung.<br><small>Gunakan mode upload foto.</small>'; setTimeout(activateFallbackMode,1500); return; }
+    if(!isCameraSupported()){
+        showCameraUnavailable('getUserMedia tidak didukung browser ini');
+        return;
+    }
     loadMsg.textContent='Mengunduh model deteksi wajah…';
     try {
         await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
@@ -798,15 +790,16 @@ async function loadModels(){
         await startCamera();
         modelLoad.style.display='none';
         camDot.style.background='#00c896';
+        cameraReady=true;
         startDetection();
     } catch(err){
-        loadMsg.innerHTML='Kamera tidak dapat dibuka.<br><small>'+err.message+'</small>';
-        setTimeout(activateFallbackMode,2000);
+        showCameraUnavailable(err.message);
     }
 }
 
 async function startCamera(){
-    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia) throw new Error('getUserMedia tidak tersedia');
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)
+        throw new Error('getUserMedia tidak tersedia');
     stream=await navigator.mediaDevices.getUserMedia({ video:{facingMode:'user',width:{ideal:640},height:{ideal:480}}, audio:false });
     video.srcObject=stream;
     await new Promise(function(res,rej){ video.onloadedmetadata=res; video.onerror=rej; setTimeout(rej,10000); });
@@ -840,11 +833,13 @@ function setFaceUI(state){
 
 btnMasuk.addEventListener('click',function(){
     if(SUDAH_IN) return;
+    if(!cameraReady){ showNotif('Kamera tidak tersedia. Absensi hanya dapat dilakukan dengan foto langsung dari kamera.','err'); return; }
     if(!faceDetected){ showNotif('Wajah belum terdeteksi.<br>Arahkan wajah Anda ke kamera terlebih dahulu.','warn'); return; }
     startAbsen('masuk');
 });
 btnKeluar.addEventListener('click',function(){
     if(SUDAH_OUT) return;
+    if(!cameraReady){ showNotif('Kamera tidak tersedia. Absensi hanya dapat dilakukan dengan foto langsung dari kamera.','err'); return; }
     if(!SUDAH_IN&&!document.getElementById('disp-masuk').textContent.match(/\d{2}:\d{2}/)){ showNotif('Anda belum absen masuk hari ini.','warn'); return; }
     if(!faceDetected){ showNotif('Wajah belum terdeteksi.<br>Arahkan wajah Anda ke kamera terlebih dahulu.','warn'); return; }
     startAbsen('keluar');
@@ -867,42 +862,26 @@ function cancelCountdown(){
     clearInterval(countdownTmr); countdownAct=false; countWrap.style.display='none'; pendingTipe=null;
 }
 
-function fileToDataUrl(file){
-    return new Promise(function(resolve){
-        var reader=new FileReader();
-        reader.onload=function(e){
-            var img=new Image();
-            img.onload=function(){
-                var MAX=640,sc=Math.min(1,MAX/img.width,MAX/img.height);
-                var c=document.createElement('canvas');
-                c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc);
-                c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-                resolve(c.toDataURL('image/jpeg',0.65));
-            };
-            img.src=e.target.result;
-        };
-        reader.readAsDataURL(file);
-    });
-}
-
 async function captureAndSend(tipe){
-    var dataUrl='';
-    if(stream&&video.readyState>=2){
-        var flash=document.createElement('div');
-        flash.style.cssText='position:absolute;inset:0;background:#fff;opacity:.7;pointer-events:none;z-index:10;';
-        video.parentElement.appendChild(flash);
-        setTimeout(function(){flash.remove();},300);
-        var ctx=canvas.getContext('2d');
-        ctx.save(); ctx.translate(canvas.width,0); ctx.scale(-1,1); ctx.drawImage(video,0,0); ctx.restore();
-        var tmpC=document.createElement('canvas');
-        var sc=Math.min(1,640/canvas.width,480/canvas.height);
-        tmpC.width=Math.round(canvas.width*sc); tmpC.height=Math.round(canvas.height*sc);
-        tmpC.getContext('2d').drawImage(canvas,0,0,tmpC.width,tmpC.height);
-        dataUrl=tmpC.toDataURL('image/jpeg',0.60);
-    } else {
-        var fi=document.getElementById('ak-fallback-file-'+tipe);
-        if(fi&&fi.files&&fi.files[0]) dataUrl=await fileToDataUrl(fi.files[0]);
+    // Foto HANYA dari kamera — tidak ada fallback upload
+    if(!stream || video.readyState < 2){
+        countdownAct=false;
+        showNotif('Kamera tidak aktif. Absensi hanya dapat dilakukan dengan foto langsung dari kamera.','err');
+        return;
     }
+
+    var flash=document.createElement('div');
+    flash.style.cssText='position:absolute;inset:0;background:#fff;opacity:.7;pointer-events:none;z-index:10;';
+    video.parentElement.appendChild(flash);
+    setTimeout(function(){flash.remove();},300);
+
+    var ctx=canvas.getContext('2d');
+    ctx.save(); ctx.translate(canvas.width,0); ctx.scale(-1,1); ctx.drawImage(video,0,0); ctx.restore();
+    var tmpC=document.createElement('canvas');
+    var sc=Math.min(1,640/canvas.width,480/canvas.height);
+    tmpC.width=Math.round(canvas.width*sc); tmpC.height=Math.round(canvas.height*sc);
+    tmpC.getContext('2d').drawImage(canvas,0,0,tmpC.width,tmpC.height);
+    var dataUrl=tmpC.toDataURL('image/jpeg',0.60);
 
     snapImg.src=dataUrl; snapOk.style.display='none'; snapPrev.style.display='block';
 
@@ -943,7 +922,6 @@ async function captureAndSend(tipe){
             setTimeout(function(){ snapPrev.style.display='none'; setFaceUI('detected'); },3000);
         } else {
             snapPrev.style.display='none';
-            // Deteksi pesan lokasi → tampilkan notif khusus
             var isLokasi = data.diluar || (data.msg && data.msg.indexOf('luar area') > -1);
             showNotif(data.msg||'Gagal menyimpan absensi', isLokasi ? 'lokasi' : 'err');
             setFaceUI('detected');
@@ -960,10 +938,10 @@ function closeLightbox(){ document.getElementById('ak-lb').classList.remove('ope
 
 /* ── Notifikasi tengah layar ── */
 var NOTIF_CFG = {
-    err:  { title:'Absen Gagal',      icon:'fa-circle-xmark',        btn:'Coba Lagi',  btnIcon:'fa-rotate-right' },
-    warn: { title:'Perhatian',         icon:'fa-triangle-exclamation', btn:'Mengerti',   btnIcon:'fa-check' },
-    ok:   { title:'Absen Berhasil',    icon:'fa-circle-check',         btn:'Tutup',      btnIcon:'fa-check' },
-    lokasi: { title:'Di Luar Area Absen', icon:'fa-map-marker-alt',   btn:'Oke, Mengerti', btnIcon:'fa-check' },
+    err:    { title:'Absen Gagal',        icon:'fa-circle-xmark',        btn:'Coba Lagi',     btnIcon:'fa-rotate-right' },
+    warn:   { title:'Perhatian',           icon:'fa-triangle-exclamation', btn:'Mengerti',      btnIcon:'fa-check' },
+    ok:     { title:'Absen Berhasil',      icon:'fa-circle-check',         btn:'Tutup',         btnIcon:'fa-check' },
+    lokasi: { title:'Di Luar Area Absen',  icon:'fa-map-marker-alt',       btn:'Oke, Mengerti', btnIcon:'fa-check' },
 };
 function showNotif(msg, type) {
     type = type || 'err';
@@ -996,16 +974,6 @@ function showToast(msg,type){
     t.style.display='flex';
     clearTimeout(t._t);
     t._t=setTimeout(function(){t.style.display='none';},3500);
-}
-
-function previewFallback(input,tipe){
-    var file=input.files[0]; if(!file) return;
-    var lbl=document.getElementById('ak-fb-'+tipe+'-lbl');
-    var prev=document.getElementById('ak-fb-'+tipe+'-preview');
-    var imgEl=document.getElementById('ak-fb-'+tipe+'-img');
-    if(lbl) lbl.textContent=file.name.substring(0,25)+(file.name.length>25?'…':'');
-    if(prev) prev.style.display='block';
-    if(imgEl) imgEl.src=URL.createObjectURL(file);
 }
 
 /* Debug test */

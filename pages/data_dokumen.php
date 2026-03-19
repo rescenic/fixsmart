@@ -355,9 +355,7 @@ include '../includes/header.php';
         </button>
       </div>
 
-      <a href="<?= APP_URL ?>/pages/input_dokumen.php" class="btn btn-primary btn-sm">
-        <i class="fa fa-plus"></i> Input Dokumen
-      </a>
+     
     </div>
   </form>
 

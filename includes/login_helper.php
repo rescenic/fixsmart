@@ -1,12 +1,4 @@
 <?php
-// includes/login_helper.php
-// Khusus untuk pencatatan log login ke database.
-// Rate limiting tetap ditangani oleh session di login.php.
-// Tidak ada define() di sini agar tidak konflik dengan MAX_ATTEMPTS di login.php.
-
-// ══════════════════════════════════════════════════════════════════════════
-// Ambil IP address yang sebenarnya (handle proxy / Cloudflare / load balancer)
-// ══════════════════════════════════════════════════════════════════════════
 function getClientIP(): string {
     $headers = [
         'HTTP_CF_CONNECTING_IP',   // Cloudflare

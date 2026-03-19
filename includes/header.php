@@ -234,53 +234,37 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   <div class="sb-nav">
   <?php
   // ════════════════════════════════════════════════════════
-  // CAPABILITY FLAGS — satu sumber kebenaran
+  // CAPABILITY FLAGS
   // ════════════════════════════════════════════════════════
   $_cur_role   = $_SESSION['user_role'] ?? 'user';
   $_uid        = (int)($_SESSION['user_id']  ?? 0);
   $_pokja_id   = (int)($_SESSION['pokja_id'] ?? 0);
   $active_menu = $active_menu ?? '';
 
-  // Akses tiket
   $_can_manage_tiket_it    = in_array($_cur_role, ['admin','teknisi']);
   $_can_manage_tiket_ipsrs = in_array($_cur_role, ['admin','teknisi_ipsrs']);
+  $_can_manage_aset_it     = in_array($_cur_role, ['admin','teknisi']);
+  $_can_manage_aset_ipsrs  = in_array($_cur_role, ['admin','teknisi_ipsrs']);
+  $_can_management         = in_array($_cur_role, ['admin','hrd']);
+  $_is_admin               = ($_cur_role === 'admin');
+  $_can_berita_acara       = in_array($_cur_role, ['admin','teknisi']);
+  $_is_akreditasi_flag     = (int)($_SESSION['is_akreditasi'] ?? 0) === 1;
+  $_can_akreditasi         = in_array($_cur_role, ['admin','akreditasi']) || $_is_akreditasi_flag;
 
-  // Akses aset & maintenance
-  $_can_manage_aset_it    = in_array($_cur_role, ['admin','teknisi']);
-  $_can_manage_aset_ipsrs = in_array($_cur_role, ['admin','teknisi_ipsrs']);
-
-  // Akses management SDM / absensi semua (admin + hrd)
-  $_can_management = in_array($_cur_role, ['admin','hrd']);
-
-  // Master data & pengaturan (admin only)
-  $_is_admin = ($_cur_role === 'admin');
-
-  // Berita acara (admin + teknisi)
-  $_can_berita_acara = in_array($_cur_role, ['admin','teknisi']);
-
-  // Akreditasi: admin, role akreditasi, ATAU role lain yang punya flag is_akreditasi=1
-  $_is_akreditasi_flag = (int)($_SESSION['is_akreditasi'] ?? 0) === 1;
-  $_can_akreditasi = in_array($_cur_role, ['admin','akreditasi']) || $_is_akreditasi_flag;
-
-  // ── Badge counts ──────────────────────────────────────────────────────────
-
-  // Tiket IT menunggu
+  // ── Badge counts ─────────────────────────────────────────
   $cnt_menunggu = 0;
   if ($_can_manage_tiket_it) {
       $cnt_menunggu = (int)$pdo->query("SELECT COUNT(*) FROM tiket WHERE status='menunggu'")->fetchColumn();
   }
-  // Tiket IT aktif milik saya
   $cnt_tiket_saya = 0;
   $s2 = $pdo->prepare("SELECT COUNT(*) FROM tiket WHERE user_id=? AND status IN ('menunggu','diproses')");
   $s2->execute([$_uid]);
   $cnt_tiket_saya = (int)$s2->fetchColumn();
 
-  // Tiket IPSRS menunggu
   $cnt_ipsrs_menunggu = 0;
   if ($_can_manage_tiket_ipsrs) {
       try { $cnt_ipsrs_menunggu = (int)$pdo->query("SELECT COUNT(*) FROM tiket_ipsrs WHERE status='menunggu'")->fetchColumn(); } catch(Exception $e) {}
   }
-  // Tiket IPSRS aktif milik saya
   $cnt_ipsrs_saya = 0;
   try {
       $s3 = $pdo->prepare("SELECT COUNT(*) FROM tiket_ipsrs WHERE user_id=? AND status IN ('menunggu','diproses')");
@@ -288,32 +272,26 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       $cnt_ipsrs_saya = (int)$s3->fetchColumn();
   } catch(Exception $e) {}
 
-  // Maintenance IT urgent (7 hari ke depan)
   $cnt_mnt_it = 0;
   if ($_can_manage_aset_it) {
       try { $cnt_mnt_it = (int)$pdo->query("SELECT COUNT(DISTINCT aset_id) FROM maintenance_it WHERE id IN (SELECT MAX(id) FROM maintenance_it GROUP BY aset_id) AND tgl_maintenance_berikut BETWEEN CURDATE() AND DATE_ADD(CURDATE(),INTERVAL 7 DAY)")->fetchColumn(); } catch(Exception $e) {}
   }
-  // Maintenance IPSRS urgent
   $cnt_mnt_ipsrs = 0;
   if ($_can_manage_aset_ipsrs) {
       try { $cnt_mnt_ipsrs = (int)$pdo->query("SELECT COUNT(DISTINCT aset_id) FROM maintenance_ipsrs WHERE id IN (SELECT MAX(id) FROM maintenance_ipsrs GROUP BY aset_id) AND tgl_maintenance_berikut BETWEEN CURDATE() AND DATE_ADD(CURDATE(),INTERVAL 7 DAY)")->fetchColumn(); } catch(Exception $e) {}
   }
-  // Monitor koneksi offline
   $cnt_offline = 0;
   if ($_can_manage_aset_it) {
       try { $cnt_offline = (int)$pdo->query("SELECT COUNT(*) FROM koneksi_monitor m WHERE aktif=1 AND (SELECT status FROM koneksi_log WHERE monitor_id=m.id ORDER BY cek_at DESC LIMIT 1)='offline'")->fetchColumn(); } catch(Exception $e) {}
   }
-  // Mutasi aset bulan ini
   $cnt_mutasi = 0;
   if ($_can_manage_aset_it) {
       try { $cnt_mutasi = (int)$pdo->query("SELECT COUNT(*) FROM mutasi_aset WHERE status_mutasi='selesai' AND MONTH(created_at)=MONTH(CURDATE()) AND YEAR(created_at)=YEAR(CURDATE())")->fetchColumn(); } catch(Exception $e) {}
   }
-  // Karyawan belum absen hari ini
   $cnt_belum_absen = 0;
   if ($_can_management) {
       try { $cnt_belum_absen = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE status='aktif' AND id NOT IN (SELECT user_id FROM absensi WHERE DATE(tanggal)=CURDATE())")->fetchColumn(); } catch(Exception $e) {}
   }
-  // Sudah absen hari ini?
   $sudah_absen = false;
   try {
       $sa = $pdo->prepare("SELECT COUNT(*) FROM absensi WHERE user_id=? AND DATE(tanggal)=CURDATE()");
@@ -321,11 +299,9 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       $sudah_absen = (int)$sa->fetchColumn() > 0;
   } catch(Exception $e) {}
 
-  // Dokumen akreditasi segera expired (30 hari ke depan) — badge warning
   $cnt_akreditasi_exp = 0;
   if ($_can_akreditasi) {
       try {
-          // Aman untuk role lain dengan is_akreditasi flag — pokja_id bisa 0 jika belum diset
           $pokja_cond = $_is_admin ? '' : ($_pokja_id ? "AND pokja_id=$_pokja_id" : '');
           $cnt_akreditasi_exp = (int)$pdo->query(
               "SELECT COUNT(*) FROM dokumen_akreditasi
@@ -336,7 +312,38 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       } catch(Exception $e) {}
   }
 
-  // ── Active group flags ────────────────────────────────────────────────────
+  // ── Badge Cuti ────────────────────────────────────────────
+  // Level 1: pengajuan menunggu approval saya sebagai atasan
+  $cnt_cuti_approve_l1 = 0;
+  try {
+      $ck_l1 = $pdo->prepare("SELECT COUNT(*) FROM pengajuan_cuti WHERE approver1_id=? AND status_approver1='menunggu' AND status='menunggu'");
+      $ck_l1->execute([$_uid]);
+      $cnt_cuti_approve_l1 = (int)$ck_l1->fetchColumn();
+  } catch(Exception $e) {}
+
+  // Level 2: HRD/Admin — sudah disetujui atasan ATAU approver1_id NULL, belum di-approve HRD
+  $cnt_cuti_approve_l2 = 0;
+  if ($_can_management) {
+      try {
+          $cnt_cuti_approve_l2 = (int)$pdo->query(
+              "SELECT COUNT(*) FROM pengajuan_cuti
+               WHERE status='menunggu'
+               AND status_approver2='menunggu'
+               AND (status_approver1='disetujui' OR approver1_id IS NULL)"
+          )->fetchColumn();
+      } catch(Exception $e) {}
+  }
+  $cnt_cuti_total = $cnt_cuti_approve_l1 + $cnt_cuti_approve_l2;
+
+  // Pengajuan cuti saya sendiri yang sedang proses
+  $cnt_cuti_saya = 0;
+  try {
+      $ck_s = $pdo->prepare("SELECT COUNT(*) FROM pengajuan_cuti WHERE user_id=? AND status='menunggu'");
+      $ck_s->execute([$_uid]);
+      $cnt_cuti_saya = (int)$ck_s->fetchColumn();
+  } catch(Exception $e) {}
+
+  // ── Active group flags ────────────────────────────────────
   $grp_tiket_it    = in_array($active_menu, ['antrian','semua_tiket','sla','buat_tiket','tiket_saya']);
   $grp_tiket_ipsrs = in_array($active_menu, ['antrian_ipsrs','semua_tiket_ipsrs','sla_ipsrs','buat_tiket_sarpras','tiket_saya_ipsrs']);
   $grp_aset_it     = in_array($active_menu, ['aset_it','maintenance_it','cek_koneksi','server_room','lacak_aset','mutasi_aset']);
@@ -346,23 +353,20 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   $grp_setting     = in_array($active_menu, ['setting_telegram','backup']);
   $grp_absensi     = in_array($active_menu, ['absensi_diri','laporan_absen_saya']);
   $grp_akreditasi  = in_array($active_menu, ['master_pokja','input_dokumen','data_dokumen']);
+  $grp_cuti        = in_array($active_menu, ['pengajuan_cuti','approval_cuti','master_cuti','laporan_cuti']);
   ?>
 
-  <!-- Dashboard — SEMUA ROLE -->
+  <!-- Dashboard -->
   <div class="nav-item <?= $active_menu==='dashboard'?'active':'' ?>">
     <a href="<?= APP_URL ?>/dashboard.php"><i class="fa fa-home ni"></i><span class="nl">Dashboard</span></a>
   </div>
 
-  <!-- ══════════════════════════════════════════════════════════════
-       TIKET IT — SEMUA ROLE
-  ══════════════════════════════════════════════════════════════ -->
+  <!-- ══ TIKET IT ══ -->
   <details class="nav-group" <?= $grp_tiket_it?'open':'' ?>>
     <summary class="nav-group-hd">
       <i class="fa fa-desktop ni-grp"></i>
       <span>Tiket IT</span>
-      <?php
-      $_badge_it = $_can_manage_tiket_it ? $cnt_menunggu : $cnt_tiket_saya;
-      if ($_badge_it): ?><span class="nc-grp"><?= $_badge_it ?></span><?php endif; ?>
+      <?php $_badge_it = $_can_manage_tiket_it ? $cnt_menunggu : $cnt_tiket_saya; if ($_badge_it): ?><span class="nc-grp"><?= $_badge_it ?></span><?php endif; ?>
       <i class="fa fa-chevron-down caret-grp"></i>
     </summary>
     <div class="nav-group-bd">
@@ -386,16 +390,12 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
     </div>
   </details>
 
-  <!-- ══════════════════════════════════════════════════════════════
-       TIKET IPSRS — SEMUA ROLE
-  ══════════════════════════════════════════════════════════════ -->
+  <!-- ══ TIKET IPSRS ══ -->
   <details class="nav-group" <?= $grp_tiket_ipsrs?'open':'' ?>>
     <summary class="nav-group-hd">
       <i class="fa fa-toolbox ni-grp"></i>
       <span>Tiket IPSRS</span>
-      <?php
-      $_badge_ipsrs = $_can_manage_tiket_ipsrs ? $cnt_ipsrs_menunggu : $cnt_ipsrs_saya;
-      if ($_badge_ipsrs): ?><span class="nc-grp"><?= $_badge_ipsrs ?></span><?php endif; ?>
+      <?php $_badge_ipsrs = $_can_manage_tiket_ipsrs ? $cnt_ipsrs_menunggu : $cnt_ipsrs_saya; if ($_badge_ipsrs): ?><span class="nc-grp"><?= $_badge_ipsrs ?></span><?php endif; ?>
       <i class="fa fa-chevron-down caret-grp"></i>
     </summary>
     <div class="nav-group-bd">
@@ -419,60 +419,39 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
     </div>
   </details>
 
-  <!-- ══════════════════════════════════════════════════════════════
-       BERITA ACARA — Admin & Teknisi IT
-  ══════════════════════════════════════════════════════════════ -->
+  <!-- ══ BERITA ACARA ══ -->
   <?php if ($_can_berita_acara): ?>
   <div class="nav-item <?= $active_menu==='berita_acara'?'active':'' ?>">
     <a href="<?= APP_URL ?>/pages/berita_acara.php"><i class="fa fa-file-contract ni"></i><span class="nl">Berita Acara</span></a>
   </div>
   <?php endif; ?>
 
-  <!-- ══════════════════════════════════════════════════════════════
-       AKREDITASI — Admin & Tim Akreditasi
-  ══════════════════════════════════════════════════════════════ -->
+  <!-- ══ AKREDITASI ══ -->
   <?php if ($_can_akreditasi): ?>
   <details class="nav-group" <?= $grp_akreditasi?'open':'' ?>>
     <summary class="nav-group-hd">
       <i class="fa fa-medal ni-grp" style="color:#d97706;"></i>
       <span>Akreditasi</span>
-      <?php if ($cnt_akreditasi_exp): ?>
-        <span class="nc-grp" style="background:#f59e0b;"><?= $cnt_akreditasi_exp ?></span>
-      <?php endif; ?>
+      <?php if ($cnt_akreditasi_exp): ?><span class="nc-grp" style="background:#f59e0b;"><?= $cnt_akreditasi_exp ?></span><?php endif; ?>
       <i class="fa fa-chevron-down caret-grp"></i>
     </summary>
     <div class="nav-group-bd">
-
       <?php if ($_is_admin): ?>
       <div class="nav-item <?= $active_menu==='master_pokja'?'active':'' ?>">
-        <a href="<?= APP_URL ?>/pages/master_pokja.php">
-          <i class="fa fa-layer-group ni"></i><span class="nl">Master Pokja</span>
-        </a>
+        <a href="<?= APP_URL ?>/pages/master_pokja.php"><i class="fa fa-layer-group ni"></i><span class="nl">Master Pokja</span></a>
       </div>
       <?php endif; ?>
-
       <div class="nav-item <?= $active_menu==='input_dokumen'?'active':'' ?>">
-        <a href="<?= APP_URL ?>/pages/input_dokumen.php">
-          <i class="fa fa-file-arrow-up ni"></i><span class="nl">Input Dokumen</span>
-        </a>
+        <a href="<?= APP_URL ?>/pages/input_dokumen.php"><i class="fa fa-file-arrow-up ni"></i><span class="nl">Input Dokumen</span></a>
       </div>
-
       <div class="nav-item <?= $active_menu==='data_dokumen'?'active':'' ?>">
-        <a href="<?= APP_URL ?>/pages/data_dokumen.php">
-          <i class="fa fa-folder-open ni"></i><span class="nl">Data Dokumen</span>
-          <?php if ($cnt_akreditasi_exp): ?>
-            <span class="nc" style="background:#f59e0b;"><?= $cnt_akreditasi_exp ?></span>
-          <?php endif; ?>
-        </a>
+        <a href="<?= APP_URL ?>/pages/data_dokumen.php"><i class="fa fa-folder-open ni"></i><span class="nl">Data Dokumen</span><?php if ($cnt_akreditasi_exp): ?><span class="nc" style="background:#f59e0b;"><?= $cnt_akreditasi_exp ?></span><?php endif; ?></a>
       </div>
-
     </div>
   </details>
   <?php endif; ?>
 
-  <!-- ══════════════════════════════════════════════════════════════
-       ASET IT — Admin & Teknisi IT
-  ══════════════════════════════════════════════════════════════ -->
+  <!-- ══ ASET IT ══ -->
   <?php if ($_can_manage_aset_it): ?>
   <details class="nav-group" <?= $grp_aset_it?'open':'' ?>>
     <summary class="nav-group-hd">
@@ -504,9 +483,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   </details>
   <?php endif; ?>
 
-  <!-- ══════════════════════════════════════════════════════════════
-       ASET IPSRS — Admin & Teknisi IPSRS
-  ══════════════════════════════════════════════════════════════ -->
+  <!-- ══ ASET IPSRS ══ -->
   <?php if ($_can_manage_aset_ipsrs): ?>
   <details class="nav-group" <?= $grp_aset_ipsrs?'open':'' ?>>
     <summary class="nav-group-hd">
@@ -526,9 +503,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   </details>
   <?php endif; ?>
 
-  <!-- ══════════════════════════════════════════════════════════════
-       MANAGEMENT — Admin & HRD
-  ══════════════════════════════════════════════════════════════ -->
+  <!-- ══ MANAGEMENT ══ -->
   <?php if ($_can_management): ?>
   <div class="sb-divider"></div>
   <details class="nav-group" <?= $grp_management?'open':'' ?>>
@@ -551,7 +526,6 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       <div class="nav-item <?= $active_menu==='jadwal'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/master_jadwal.php"><i class="fa fa-calendar-days ni"></i><span class="nl">Jadwal</span></a>
       </div>
-    
       <div class="nav-item <?= $active_menu==='laporan_absen'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/laporan_absensi.php"><i class="fa fa-chart-bar ni"></i><span class="nl">Laporan Absensi</span></a>
       </div>
@@ -562,9 +536,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   </details>
   <?php endif; ?>
 
-  <!-- ══════════════════════════════════════════════════════════════
-       MASTER DATA — Admin only
-  ══════════════════════════════════════════════════════════════ -->
+  <!-- ══ MASTER DATA ══ -->
   <?php if ($_is_admin): ?>
   <details class="nav-group" <?= $grp_master?'open':'' ?>>
     <summary class="nav-group-hd">
@@ -590,9 +562,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
     </div>
   </details>
 
-  <!-- ══════════════════════════════════════════════════════════════
-       PENGATURAN — Admin only
-  ══════════════════════════════════════════════════════════════ -->
+  <!-- ══ PENGATURAN ══ -->
   <details class="nav-group" <?= $grp_setting?'open':'' ?>>
     <summary class="nav-group-hd">
       <i class="fa fa-cog ni-grp"></i><span>Pengaturan</span>
@@ -613,11 +583,9 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </div>
     </div>
   </details>
-  <?php endif; /* end admin-only */ ?>
+  <?php endif; ?>
 
-  <!-- ══════════════════════════════════════════════════════════════
-       ABSENSI SAYA — SEMUA ROLE
-  ══════════════════════════════════════════════════════════════ -->
+  <!-- ══ ABSENSI SAYA ══ -->
   <div class="sb-divider"></div>
   <details class="nav-group" <?= $grp_absensi?'open':'' ?>>
     <summary class="nav-group-hd">
@@ -643,7 +611,51 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
     </div>
   </details>
 
-  <!-- Profil — SEMUA ROLE -->
+  <!-- ══ CUTI — SEMUA ROLE ══ -->
+  <details class="nav-group" <?= $grp_cuti?'open':'' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-calendar-minus ni-grp"></i>
+      <span>Cuti</span>
+      <?php
+      $cnt_cuti_badge = $cnt_cuti_total ?: $cnt_cuti_saya;
+      if ($cnt_cuti_badge): ?><span class="nc-grp" style="<?= $cnt_cuti_total ? '' : 'background:#f59e0b;' ?>"><?= $cnt_cuti_badge ?></span><?php endif; ?>
+      <i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+      <div class="nav-item <?= $active_menu==='pengajuan_cuti'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/pengajuan_cuti.php">
+          <i class="fa fa-paper-plane ni"></i><span class="nl">Ajukan Cuti</span>
+          <?php if ($cnt_cuti_saya): ?>
+          <span class="nc" style="background:#f59e0b;"><?= $cnt_cuti_saya ?></span>
+          <?php endif; ?>
+        </a>
+      </div>
+      <?php if ($cnt_cuti_approve_l1 || $_can_management): ?>
+      <div class="nav-item <?= $active_menu==='approval_cuti'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/approval_cuti.php">
+          <i class="fa fa-check-circle ni"></i><span class="nl">Approval Cuti</span>
+          <?php if ($cnt_cuti_total): ?>
+          <span class="nc"><?= $cnt_cuti_total ?></span>
+          <?php endif; ?>
+        </a>
+      </div>
+      <?php endif; ?>
+      <?php if ($_can_management): ?>
+      <div class="nav-item <?= $active_menu==='master_cuti'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/master_cuti.php">
+          <i class="fa fa-list ni"></i><span class="nl">Master Cuti</span>
+        </a>
+      </div>
+      <div class="nav-item <?= $active_menu==='laporan_cuti'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/laporan_cuti.php">
+          <i class="fa fa-chart-bar ni"></i><span class="nl">Laporan Cuti</span>
+        </a>
+      </div>
+      <?php endif; ?>
+    </div>
+  </details>
+
+  <!-- Profil -->
   <div class="nav-item <?= $active_menu==='profil'?'active':'' ?>">
     <a href="<?= APP_URL ?>/pages/profil.php"><i class="fa fa-user-circle ni"></i><span class="nl">Profil Saya</span></a>
   </div>
@@ -709,6 +721,14 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
     </a>
     <?php endif; ?>
 
+    <?php if ($cnt_cuti_total): ?>
+    <a href="<?= APP_URL ?>/pages/approval_cuti.php" class="tn-alert-pill"
+       style="border-color:rgba(139,92,246,.3);background:rgba(139,92,246,.07);color:#6d28d9;">
+      <i class="fa fa-calendar-check" style="color:#8b5cf6;"></i>
+      <span><?= $cnt_cuti_total ?> cuti</span>
+    </a>
+    <?php endif; ?>
+
     <?php if ($_can_akreditasi && $cnt_akreditasi_exp): ?>
     <a href="<?= APP_URL ?>/pages/data_dokumen.php?status=aktif" class="tn-alert-pill"
        style="border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.07);color:#92400e;">
@@ -731,6 +751,16 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
           <i class="fa fa-fingerprint"></i> Absen Sekarang
           <?php if (!$sudah_absen): ?><span style="width:7px;height:7px;border-radius:50%;background:#f59e0b;display:inline-block;margin-left:4px;"></span><?php endif; ?>
         </a>
+        <a href="<?= APP_URL ?>/pages/pengajuan_cuti.php">
+          <i class="fa fa-calendar-minus"></i> Ajukan Cuti
+          <?php if ($cnt_cuti_saya): ?><span style="width:7px;height:7px;border-radius:50%;background:#f59e0b;display:inline-block;margin-left:4px;"></span><?php endif; ?>
+        </a>
+        <?php if ($cnt_cuti_total): ?>
+        <a href="<?= APP_URL ?>/pages/approval_cuti.php">
+          <i class="fa fa-check-circle" style="color:#8b5cf6;"></i> Approval Cuti
+          <span style="background:#8b5cf6;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;margin-left:4px;"><?= $cnt_cuti_total ?></span>
+        </a>
+        <?php endif; ?>
         <?php if ($_can_akreditasi): ?>
         <a href="<?= APP_URL ?>/pages/data_dokumen.php"><i class="fa fa-folder-open"></i> Dokumen Akreditasi</a>
         <?php endif; ?>
@@ -759,7 +789,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
           ['fa-users',             '#fbbf24', 'Multi Role'],
           ['fa-paper-plane',       '#38bdf8', 'Telegram'],
           ['fa-screwdriver-wrench','#00e5b0', 'Maintenance'],
-          ['fa-medal',             '#fcd34d', 'Akreditasi'],
+          ['fa-calendar-minus',    '#f9a8d4', 'Cuti'],
         ] as [$ic,$cl,$lb]): ?>
         <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:5px;font-size:10px;color:rgba(255,255,255,.55);display:flex;align-items:center;gap:5px;">
           <i class="fa <?= $ic ?>" style="color:<?= $cl ?>;font-size:11px;width:13px;text-align:center;"></i><?= $lb ?>
@@ -779,7 +809,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
         <button onclick="closeModal('m-about')" style="width:26px;height:26px;border-radius:50%;background:#f3f4f6;border:none;cursor:pointer;color:#9ca3af;font-size:12px;display:flex;align-items:center;justify-content:center;transition:all .18s;" onmouseover="this.style.background='#ff4d6d';this.style.color='#fff';" onmouseout="this.style.background='#f3f4f6';this.style.color='#9ca3af';"><i class="fa fa-times"></i></button>
       </div>
       <div style="flex:1;padding:14px 16px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;">
-        <p style="font-size:11.5px;color:#64748b;line-height:1.75;margin:0;">Sistem manajemen tiket IT berbasis web untuk membantu pengelolaan <em>work order</em>, pelacakan SLA, manajemen aset &amp; absensi, dokumen akreditasi, dan pelaporan kinerja tim IT.</p>
+        <p style="font-size:11.5px;color:#64748b;line-height:1.75;margin:0;">Sistem manajemen tiket IT berbasis web untuk membantu pengelolaan <em>work order</em>, pelacakan SLA, manajemen aset &amp; absensi, dokumen akreditasi, sistem cuti berjenjang, dan pelaporan kinerja tim IT.</p>
         <div style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);border:1px solid #a7f3d0;border-radius:9px;padding:10px 12px;display:flex;align-items:center;gap:10px;">
           <div style="width:32px;height:32px;background:#00e5b0;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="fa fa-gift" style="color:#0a0f14;font-size:13px;"></i></div>
           <div><div style="font-size:12px;font-weight:700;color:#065f46;">Aplikasi 100% Gratis</div><div style="font-size:10.5px;color:#059669;margin-top:1px;line-height:1.5;">Bebas digunakan &amp; dimodifikasi. <strong>Dilarang diperjualbelikan.</strong></div></div>
