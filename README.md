@@ -57,7 +57,7 @@ Jika aplikasi ini bermanfaat dan Anda ingin mendukung pengembangan FixSmart, And
 📱 `0821-7784-6209`
 
 **Bank Syariah Indonesia (BSI)**  
-🏦 `713417557`  
+🏦 `7134197557`  
 👤 **M. Wira Satria Buana**
 
 > Donasi bersifat sukarela dan tidak wajib.
