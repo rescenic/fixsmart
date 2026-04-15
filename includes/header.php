@@ -193,9 +193,6 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
 
 <div class="sb-overlay" id="sb-overlay" onclick="closeSidebarMobile()"></div>
 
-<!-- ══════════════════════════════════════
-     SIDEBAR
-══════════════════════════════════════ -->
 <nav class="sidebar" id="sidebar">
 
   <div class="sb-logo">
@@ -233,9 +230,6 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
 
   <div class="sb-nav">
   <?php
-  // ════════════════════════════════════════════════════════
-  // CAPABILITY FLAGS
-  // ════════════════════════════════════════════════════════
   $_cur_role   = $_SESSION['user_role'] ?? 'user';
   $_uid        = (int)($_SESSION['user_id']  ?? 0);
   $_pokja_id   = (int)($_SESSION['pokja_id'] ?? 0);
@@ -251,7 +245,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   $_is_akreditasi_flag     = (int)($_SESSION['is_akreditasi'] ?? 0) === 1;
   $_can_akreditasi         = in_array($_cur_role, ['admin','akreditasi']) || $_is_akreditasi_flag;
 
-  // ── Badge counts ─────────────────────────────────────────
+  // ── Badge counts ──────────────────────────────────────────────────────────
   $cnt_menunggu = 0;
   if ($_can_manage_tiket_it) {
       $cnt_menunggu = (int)$pdo->query("SELECT COUNT(*) FROM tiket WHERE status='menunggu'")->fetchColumn();
@@ -312,8 +306,6 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       } catch(Exception $e) {}
   }
 
-  // ── Badge Cuti ────────────────────────────────────────────
-  // Level 1: pengajuan menunggu approval saya sebagai atasan
   $cnt_cuti_approve_l1 = 0;
   try {
       $ck_l1 = $pdo->prepare("SELECT COUNT(*) FROM pengajuan_cuti WHERE approver1_id=? AND status_approver1='menunggu' AND status='menunggu'");
@@ -321,21 +313,18 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       $cnt_cuti_approve_l1 = (int)$ck_l1->fetchColumn();
   } catch(Exception $e) {}
 
-  // Level 2: HRD/Admin — sudah disetujui atasan ATAU approver1_id NULL, belum di-approve HRD
   $cnt_cuti_approve_l2 = 0;
   if ($_can_management) {
       try {
           $cnt_cuti_approve_l2 = (int)$pdo->query(
               "SELECT COUNT(*) FROM pengajuan_cuti
-               WHERE status='menunggu'
-               AND status_approver2='menunggu'
+               WHERE status='menunggu' AND status_approver2='menunggu'
                AND (status_approver1='disetujui' OR approver1_id IS NULL)"
           )->fetchColumn();
       } catch(Exception $e) {}
   }
   $cnt_cuti_total = $cnt_cuti_approve_l1 + $cnt_cuti_approve_l2;
 
-  // Pengajuan cuti saya sendiri yang sedang proses
   $cnt_cuti_saya = 0;
   try {
       $ck_s = $pdo->prepare("SELECT COUNT(*) FROM pengajuan_cuti WHERE user_id=? AND status='menunggu'");
@@ -343,12 +332,22 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       $cnt_cuti_saya = (int)$ck_s->fetchColumn();
   } catch(Exception $e) {}
 
-  // ── Active group flags ────────────────────────────────────
+  // ── Berkas karyawan — badge berkas belum lengkap milik user sendiri ────────
+  $cnt_berkas_exp = 0;
+  try {
+      $cnt_berkas_exp = (int)$pdo->query("
+          SELECT COUNT(*) FROM berkas_karyawan
+          WHERE user_id=$_uid AND tgl_exp IS NOT NULL
+          AND tgl_exp < DATE_ADD(NOW(),INTERVAL 30 DAY) AND tgl_exp >= NOW()
+      ")->fetchColumn();
+  } catch(Exception $e) {}
+
+  // ── Active group flags ─────────────────────────────────────────────────────
   $grp_tiket_it    = in_array($active_menu, ['antrian','semua_tiket','sla','buat_tiket','tiket_saya']);
   $grp_tiket_ipsrs = in_array($active_menu, ['antrian_ipsrs','semua_tiket_ipsrs','sla_ipsrs','buat_tiket_sarpras','tiket_saya_ipsrs']);
   $grp_aset_it     = in_array($active_menu, ['aset_it','maintenance_it','cek_koneksi','server_room','lacak_aset','mutasi_aset']);
   $grp_aset_ipsrs  = in_array($active_menu, ['aset_ipsrs','maintenance_ipsrs']);
-  $grp_management  = in_array($active_menu, ['master_karyawan','jabatan','shift','jadwal','absensi','laporan_absen','lokasi_absen','master_shift','master_jadwal']);
+  $grp_management  = in_array($active_menu, ['master_karyawan','berkas_karyawan','master_berkas','jabatan','shift','jadwal','absensi','laporan_absen','lokasi_absen','master_shift','master_jadwal']);
   $grp_master      = in_array($active_menu, ['kategori','kategori_ipsrs','bagian','users','login_log']);
   $grp_setting     = in_array($active_menu, ['setting_telegram','backup']);
   $grp_absensi     = in_array($active_menu, ['absensi_diri','laporan_absen_saya']);
@@ -503,7 +502,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   </details>
   <?php endif; ?>
 
-  <!-- ══ MANAGEMENT ══ -->
+  <!-- ══ MANAGEMENT (admin & hrd) ══ -->
   <?php if ($_can_management): ?>
   <div class="sb-divider"></div>
   <details class="nav-group" <?= $grp_management?'open':'' ?>>
@@ -514,9 +513,27 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       <i class="fa fa-chevron-down caret-grp"></i>
     </summary>
     <div class="nav-group-bd">
+      <!-- Master Karyawan -->
       <div class="nav-item <?= $active_menu==='master_karyawan'?'active':'' ?>">
-        <a href="<?= APP_URL ?>/pages/master_karyawan.php"><i class="fa fa-users ni"></i><span class="nl">Master Karyawan</span></a>
+        <a href="<?= APP_URL ?>/pages/master_karyawan.php">
+          <i class="fa fa-users ni"></i><span class="nl">Master Karyawan</span>
+        </a>
       </div>
+
+      <!-- ★ Berkas Karyawan — admin & hrd ★ -->
+      <div class="nav-item <?= $active_menu==='berkas_karyawan'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/berkas_karyawan.php">
+          <i class="fa fa-folder-open ni"></i><span class="nl">Berkas Karyawan</span>
+        </a>
+      </div>
+
+      <!-- ★ Master Berkas — admin & hrd ★ -->
+      <div class="nav-item <?= $active_menu==='master_berkas'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/master_berkas.php">
+          <i class="fa fa-folder-tree ni"></i><span class="nl">Master Berkas</span>
+        </a>
+      </div>
+
       <div class="nav-item <?= $active_menu==='jabatan'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/jabatan.php"><i class="fa fa-briefcase ni"></i><span class="nl">Jabatan</span></a>
       </div>
@@ -611,53 +628,51 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
     </div>
   </details>
 
-  <!-- ══ CUTI — SEMUA ROLE ══ -->
+  <!-- ══ CUTI ══ -->
   <details class="nav-group" <?= $grp_cuti?'open':'' ?>>
     <summary class="nav-group-hd">
       <i class="fa fa-calendar-minus ni-grp"></i>
       <span>Cuti</span>
-      <?php
-      $cnt_cuti_badge = $cnt_cuti_total ?: $cnt_cuti_saya;
-      if ($cnt_cuti_badge): ?><span class="nc-grp" style="<?= $cnt_cuti_total ? '' : 'background:#f59e0b;' ?>"><?= $cnt_cuti_badge ?></span><?php endif; ?>
+      <?php $cnt_cuti_badge = $cnt_cuti_total ?: $cnt_cuti_saya; if ($cnt_cuti_badge): ?><span class="nc-grp" style="<?= $cnt_cuti_total ? '' : 'background:#f59e0b;' ?>"><?= $cnt_cuti_badge ?></span><?php endif; ?>
       <i class="fa fa-chevron-down caret-grp"></i>
     </summary>
     <div class="nav-group-bd">
       <div class="nav-item <?= $active_menu==='pengajuan_cuti'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/pengajuan_cuti.php">
           <i class="fa fa-paper-plane ni"></i><span class="nl">Ajukan Cuti</span>
-          <?php if ($cnt_cuti_saya): ?>
-          <span class="nc" style="background:#f59e0b;"><?= $cnt_cuti_saya ?></span>
-          <?php endif; ?>
+          <?php if ($cnt_cuti_saya): ?><span class="nc" style="background:#f59e0b;"><?= $cnt_cuti_saya ?></span><?php endif; ?>
         </a>
       </div>
       <?php if ($cnt_cuti_approve_l1 || $_can_management): ?>
       <div class="nav-item <?= $active_menu==='approval_cuti'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/approval_cuti.php">
           <i class="fa fa-check-circle ni"></i><span class="nl">Approval Cuti</span>
-          <?php if ($cnt_cuti_total): ?>
-          <span class="nc"><?= $cnt_cuti_total ?></span>
-          <?php endif; ?>
+          <?php if ($cnt_cuti_total): ?><span class="nc"><?= $cnt_cuti_total ?></span><?php endif; ?>
         </a>
       </div>
       <?php endif; ?>
       <?php if ($_can_management): ?>
       <div class="nav-item <?= $active_menu==='master_cuti'?'active':'' ?>">
-        <a href="<?= APP_URL ?>/pages/master_cuti.php">
-          <i class="fa fa-list ni"></i><span class="nl">Master Cuti</span>
-        </a>
+        <a href="<?= APP_URL ?>/pages/master_cuti.php"><i class="fa fa-list ni"></i><span class="nl">Master Cuti</span></a>
       </div>
       <div class="nav-item <?= $active_menu==='laporan_cuti'?'active':'' ?>">
-        <a href="<?= APP_URL ?>/pages/laporan_cuti.php">
-          <i class="fa fa-chart-bar ni"></i><span class="nl">Laporan Cuti</span>
-        </a>
+        <a href="<?= APP_URL ?>/pages/laporan_cuti.php"><i class="fa fa-chart-bar ni"></i><span class="nl">Laporan Cuti</span></a>
       </div>
       <?php endif; ?>
     </div>
   </details>
 
-  <!-- Profil -->
+  <!-- Profil — semua role, dengan badge berkas exp -->
   <div class="nav-item <?= $active_menu==='profil'?'active':'' ?>">
-    <a href="<?= APP_URL ?>/pages/profil.php"><i class="fa fa-user-circle ni"></i><span class="nl">Profil Saya</span></a>
+    <a href="<?= APP_URL ?>/pages/profil.php">
+      <i class="fa fa-user-circle ni"></i>
+      <span class="nl">Profil Saya</span>
+      <?php if ($cnt_berkas_exp > 0): ?>
+      <span class="nc" style="background:#ea580c;" title="<?= $cnt_berkas_exp ?> berkas mendekati kadaluarsa">
+        <?= $cnt_berkas_exp ?>
+      </span>
+      <?php endif; ?>
+    </a>
   </div>
 
   </div><!-- /sb-nav -->
@@ -737,6 +752,14 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
     </a>
     <?php endif; ?>
 
+    <?php if ($cnt_berkas_exp > 0): ?>
+    <a href="<?= APP_URL ?>/pages/profil.php#berkas" class="tn-alert-pill"
+       style="border-color:rgba(234,88,12,.3);background:rgba(234,88,12,.07);color:#9a3412;">
+      <i class="fa fa-folder-open" style="color:#ea580c;"></i>
+      <span><?= $cnt_berkas_exp ?> berkas exp</span>
+    </a>
+    <?php endif; ?>
+
     <button onclick="openModal('m-about')" class="tn-about-btn"><i class="fa fa-circle-info"></i><span>Tentang</span></button>
 
     <div class="tn-user" id="tn-user" onclick="toggleDropdown()">
@@ -747,6 +770,10 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       </div>
       <div class="tn-dropdown">
         <a href="<?= APP_URL ?>/pages/profil.php"><i class="fa fa-user"></i> Profil Saya</a>
+        <a href="<?= APP_URL ?>/pages/profil.php#berkas">
+          <i class="fa fa-folder-open"></i> Berkas Saya
+          <?php if ($cnt_berkas_exp): ?><span style="background:#ea580c;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;margin-left:4px;"><?= $cnt_berkas_exp ?></span><?php endif; ?>
+        </a>
         <a href="<?= APP_URL ?>/pages/absen_kamera.php">
           <i class="fa fa-fingerprint"></i> Absen Sekarang
           <?php if (!$sudah_absen): ?><span style="width:7px;height:7px;border-radius:50%;background:#f59e0b;display:inline-block;margin-left:4px;"></span><?php endif; ?>
@@ -784,12 +811,9 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       <div style="width:100%;height:1px;background:rgba(255,255,255,.06);margin:14px 0;"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;width:100%;">
         <?php foreach([
-          ['fa-ticket-alt',        '#60a5fa', 'Tiket'],
-          ['fa-chart-line',        '#a78bfa', 'SLA'],
-          ['fa-users',             '#fbbf24', 'Multi Role'],
-          ['fa-paper-plane',       '#38bdf8', 'Telegram'],
-          ['fa-screwdriver-wrench','#00e5b0', 'Maintenance'],
-          ['fa-calendar-minus',    '#f9a8d4', 'Cuti'],
+          ['fa-ticket-alt','#60a5fa','Tiket'],['fa-chart-line','#a78bfa','SLA'],
+          ['fa-users','#fbbf24','Multi Role'],['fa-paper-plane','#38bdf8','Telegram'],
+          ['fa-screwdriver-wrench','#00e5b0','Maintenance'],['fa-calendar-minus','#f9a8d4','Cuti'],
         ] as [$ic,$cl,$lb]): ?>
         <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:5px;font-size:10px;color:rgba(255,255,255,.55);display:flex;align-items:center;gap:5px;">
           <i class="fa <?= $ic ?>" style="color:<?= $cl ?>;font-size:11px;width:13px;text-align:center;"></i><?= $lb ?>
@@ -842,7 +866,6 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
 ══════════════════════════════════════ -->
 <script>
 function isMobile(){ return window.innerWidth<=768; }
-
 function handleToggle(){
   const sb=document.getElementById('sidebar'),tn=document.getElementById('topnav'),mn=document.getElementById('main'),ov=document.getElementById('sb-overlay');
   if(!sb) return;
@@ -854,12 +877,10 @@ function handleToggle(){
     else{sb.classList.add('collapsed');tn&&tn.classList.add('sb-collapsed');mn&&mn.classList.add('sb-collapsed');try{localStorage.setItem('sb_collapsed','1');}catch(e){}}
   }
 }
-
 function closeSidebarMobile(){
   const sb=document.getElementById('sidebar'),ov=document.getElementById('sb-overlay');
   sb&&sb.classList.remove('mobile-open'); ov&&ov.classList.remove('active');
 }
-
 (function(){
   if(isMobile()) return;
   try{
@@ -869,18 +890,15 @@ function closeSidebarMobile(){
     }
   }catch(e){}
 })();
-
 window.addEventListener('resize',function(){
   if(!isMobile()){ const sb=document.getElementById('sidebar'),ov=document.getElementById('sb-overlay'); sb&&sb.classList.remove('mobile-open'); ov&&ov.classList.remove('active'); }
 });
-
 function openModal(id){ const el=document.getElementById(id); if(el){el.style.display='flex';document.body.style.overflow='hidden';} }
 function closeModal(id){ const el=document.getElementById(id); if(el){el.style.display='none';document.body.style.overflow='';} }
 document.addEventListener('click',function(e){ if(e.target&&e.target.classList.contains('modal-ov')) closeModal(e.target.id); });
 document.addEventListener('keydown',function(e){ if(e.key==='Escape') document.querySelectorAll('.modal-ov').forEach(function(m){ if(m.style.display==='flex') closeModal(m.id); }); });
 function toggleDropdown(){ document.getElementById('tn-user').classList.toggle('open'); }
 document.addEventListener('click',function(e){ const d=document.getElementById('tn-user'); if(d&&!d.contains(e.target)) d.classList.remove('open'); });
-
 function copyText(text,btn){
   navigator.clipboard.writeText(text).then(()=>{
     const orig=btn.innerHTML;
@@ -889,14 +907,12 @@ function copyText(text,btn){
     setTimeout(()=>{ btn.innerHTML=orig; btn.style.cssText=''; },2000);
   });
 }
-
 setTimeout(function(){
   document.querySelectorAll('.alert').forEach(function(a){
     a.style.transition='opacity .4s'; a.style.opacity='0';
     setTimeout(function(){ if(a.parentNode) a.parentNode.removeChild(a); },400);
   });
 },4000);
-
 document.addEventListener('DOMContentLoaded',function(){
   document.querySelectorAll('details.nav-group').forEach(function(det){
     const bd=det.querySelector('.nav-group-bd'); if(!bd) return;
