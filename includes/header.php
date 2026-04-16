@@ -214,6 +214,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
         'teknisi_ipsrs' => 'Teknisi IPSRS',
         'hrd'           => 'HRD',
         'akreditasi'    => 'Tim Akreditasi',
+        'keuangan'      => 'Keuangan',
         'user'          => 'User',
       ];
       $_role_display = $_role_map[$_SESSION['user_role']] ?? ucfirst($_SESSION['user_role']);
@@ -244,6 +245,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   $_can_berita_acara       = in_array($_cur_role, ['admin','teknisi']);
   $_is_akreditasi_flag     = (int)($_SESSION['is_akreditasi'] ?? 0) === 1;
   $_can_akreditasi         = in_array($_cur_role, ['admin','akreditasi']) || $_is_akreditasi_flag;
+  $_can_penggajian         = in_array($_cur_role, ['admin','keuangan']);
 
   // ── Badge counts ──────────────────────────────────────────────────────────
   $cnt_menunggu = 0;
@@ -332,7 +334,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       $cnt_cuti_saya = (int)$ck_s->fetchColumn();
   } catch(Exception $e) {}
 
-  // ── Berkas karyawan — badge berkas belum lengkap milik user sendiri ────────
+  // ── Berkas karyawan badge ────────────────────────────────────────────────
   $cnt_berkas_exp = 0;
   try {
       $cnt_berkas_exp = (int)$pdo->query("
@@ -341,6 +343,16 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
           AND tgl_exp < DATE_ADD(NOW(),INTERVAL 30 DAY) AND tgl_exp >= NOW()
       ")->fetchColumn();
   } catch(Exception $e) {}
+
+  // ── Penggajian badge ─────────────────────────────────────────────────────
+  $cnt_gaji_pending = 0;
+  if ($_can_penggajian) {
+      try {
+          $cnt_gaji_pending = (int)$pdo->query(
+              "SELECT COUNT(*) FROM transaksi_gaji WHERE status='draft'"
+          )->fetchColumn();
+      } catch(Exception $e) {}
+  }
 
   // ── Active group flags ─────────────────────────────────────────────────────
   $grp_tiket_it    = in_array($active_menu, ['antrian','semua_tiket','sla','buat_tiket','tiket_saya']);
@@ -353,6 +365,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
   $grp_absensi     = in_array($active_menu, ['absensi_diri','laporan_absen_saya']);
   $grp_akreditasi  = in_array($active_menu, ['master_pokja','input_dokumen','data_dokumen']);
   $grp_cuti        = in_array($active_menu, ['pengajuan_cuti','approval_cuti','master_cuti','laporan_cuti']);
+  $grp_penggajian  = in_array($active_menu, ['master_penerimaan','master_potongan','masterpph21','data_gaji','transaksi_gaji']);
   ?>
 
   <!-- Dashboard -->
@@ -513,27 +526,21 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
       <i class="fa fa-chevron-down caret-grp"></i>
     </summary>
     <div class="nav-group-bd">
-      <!-- Master Karyawan -->
       <div class="nav-item <?= $active_menu==='master_karyawan'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/master_karyawan.php">
           <i class="fa fa-users ni"></i><span class="nl">Master Karyawan</span>
         </a>
       </div>
-
-      <!-- ★ Berkas Karyawan — admin & hrd ★ -->
       <div class="nav-item <?= $active_menu==='berkas_karyawan'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/berkas_karyawan.php">
           <i class="fa fa-folder-open ni"></i><span class="nl">Berkas Karyawan</span>
         </a>
       </div>
-
-      <!-- ★ Master Berkas — admin & hrd ★ -->
       <div class="nav-item <?= $active_menu==='master_berkas'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/master_berkas.php">
           <i class="fa fa-folder-tree ni"></i><span class="nl">Master Berkas</span>
         </a>
       </div>
-
       <div class="nav-item <?= $active_menu==='jabatan'?'active':'' ?>">
         <a href="<?= APP_URL ?>/pages/jabatan.php"><i class="fa fa-briefcase ni"></i><span class="nl">Jabatan</span></a>
       </div>
@@ -662,7 +669,54 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
     </div>
   </details>
 
-  <!-- Profil — semua role, dengan badge berkas exp -->
+  <!-- ══ PENGGAJIAN ══ -->
+  <?php if ($_can_penggajian): ?>
+  <div class="sb-divider"></div>
+  <details class="nav-group" <?= $grp_penggajian?'open':'' ?>>
+    <summary class="nav-group-hd">
+      <i class="fa fa-money-bill-wave ni-grp" style="color:#22c55e;"></i>
+      <span>Penggajian</span>
+      <?php if ($cnt_gaji_pending): ?><span class="nc-grp" style="background:#22c55e;"><?= $cnt_gaji_pending ?></span><?php endif; ?>
+      <i class="fa fa-chevron-down caret-grp"></i>
+    </summary>
+    <div class="nav-group-bd">
+      <div class="nav-item <?= $active_menu==='master_penerimaan'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/master_penerimaan.php">
+          <i class="fa fa-circle-plus ni" style="color:#22c55e;"></i>
+          <span class="nl">Master Penerimaan</span>
+        </a>
+      </div>
+      <div class="nav-item <?= $active_menu==='master_potongan'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/master_potongan.php">
+          <i class="fa fa-circle-minus ni" style="color:#f87171;"></i>
+          <span class="nl">Master Potongan</span>
+        </a>
+      </div>
+
+         <div class="nav-item <?= $active_menu==='masterpph21'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/master_pph21.php">
+          <i class="fa fa-circle-minus ni" style="color:#f87171;"></i>
+          <span class="nl">Master PPH21</span>
+        </a>
+      </div>
+      <div class="nav-item <?= $active_menu==='data_gaji'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/data_gaji.php">
+          <i class="fa fa-table-list ni" style="color:#60a5fa;"></i>
+          <span class="nl">Data Gaji</span>
+        </a>
+      </div>
+      <div class="nav-item <?= $active_menu==='transaksi_gaji'?'active':'' ?>">
+        <a href="<?= APP_URL ?>/pages/transaksi_gaji.php">
+          <i class="fa fa-receipt ni" style="color:#fbbf24;"></i>
+          <span class="nl">Transaksi Gaji</span>
+          <?php if ($cnt_gaji_pending): ?><span class="nc" style="background:#22c55e;"><?= $cnt_gaji_pending ?></span><?php endif; ?>
+        </a>
+      </div>
+    </div>
+  </details>
+  <?php endif; ?>
+
+  <!-- Profil -->
   <div class="nav-item <?= $active_menu==='profil'?'active':'' ?>">
     <a href="<?= APP_URL ?>/pages/profil.php">
       <i class="fa fa-user-circle ni"></i>
@@ -760,6 +814,14 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
     </a>
     <?php endif; ?>
 
+    <?php if ($_can_penggajian && $cnt_gaji_pending): ?>
+    <a href="<?= APP_URL ?>/pages/transaksi_gaji.php" class="tn-alert-pill"
+       style="border-color:rgba(34,197,94,.3);background:rgba(34,197,94,.07);color:#166534;">
+      <i class="fa fa-money-bill-wave" style="color:#22c55e;"></i>
+      <span><?= $cnt_gaji_pending ?> gaji draft</span>
+    </a>
+    <?php endif; ?>
+
     <button onclick="openModal('m-about')" class="tn-about-btn"><i class="fa fa-circle-info"></i><span>Tentang</span></button>
 
     <div class="tn-user" id="tn-user" onclick="toggleDropdown()">
@@ -791,6 +853,12 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
         <?php if ($_can_akreditasi): ?>
         <a href="<?= APP_URL ?>/pages/data_dokumen.php"><i class="fa fa-folder-open"></i> Dokumen Akreditasi</a>
         <?php endif; ?>
+        <?php if ($_can_penggajian): ?>
+        <a href="<?= APP_URL ?>/pages/transaksi_gaji.php">
+          <i class="fa fa-money-bill-wave" style="color:#22c55e;"></i> Penggajian
+          <?php if ($cnt_gaji_pending): ?><span style="background:#22c55e;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;margin-left:4px;"><?= $cnt_gaji_pending ?></span><?php endif; ?>
+        </a>
+        <?php endif; ?>
         <a href="<?= APP_URL ?>/logout.php" class="red-link"><i class="fa fa-sign-out-alt"></i> Keluar</a>
       </div>
     </div>
@@ -814,6 +882,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
           ['fa-ticket-alt','#60a5fa','Tiket'],['fa-chart-line','#a78bfa','SLA'],
           ['fa-users','#fbbf24','Multi Role'],['fa-paper-plane','#38bdf8','Telegram'],
           ['fa-screwdriver-wrench','#00e5b0','Maintenance'],['fa-calendar-minus','#f9a8d4','Cuti'],
+          ['fa-money-bill-wave','#22c55e','Penggajian'],['fa-shield-halved','#818cf8','Keamanan'],
         ] as [$ic,$cl,$lb]): ?>
         <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:5px;font-size:10px;color:rgba(255,255,255,.55);display:flex;align-items:center;gap:5px;">
           <i class="fa <?= $ic ?>" style="color:<?= $cl ?>;font-size:11px;width:13px;text-align:center;"></i><?= $lb ?>
@@ -833,7 +902,7 @@ details.nav-group[open] > summary.nav-group-hd .caret-grp { transform: rotate(18
         <button onclick="closeModal('m-about')" style="width:26px;height:26px;border-radius:50%;background:#f3f4f6;border:none;cursor:pointer;color:#9ca3af;font-size:12px;display:flex;align-items:center;justify-content:center;transition:all .18s;" onmouseover="this.style.background='#ff4d6d';this.style.color='#fff';" onmouseout="this.style.background='#f3f4f6';this.style.color='#9ca3af';"><i class="fa fa-times"></i></button>
       </div>
       <div style="flex:1;padding:14px 16px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;">
-        <p style="font-size:11.5px;color:#64748b;line-height:1.75;margin:0;">Sistem manajemen tiket IT berbasis web untuk membantu pengelolaan <em>work order</em>, pelacakan SLA, manajemen aset &amp; absensi, dokumen akreditasi, sistem cuti berjenjang, dan pelaporan kinerja tim IT.</p>
+        <p style="font-size:11.5px;color:#64748b;line-height:1.75;margin:0;">Sistem manajemen tiket IT berbasis web untuk membantu pengelolaan <em>work order</em>, pelacakan SLA, manajemen aset &amp; absensi, dokumen akreditasi, sistem cuti berjenjang, penggajian karyawan, dan pelaporan kinerja tim IT.</p>
         <div style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);border:1px solid #a7f3d0;border-radius:9px;padding:10px 12px;display:flex;align-items:center;gap:10px;">
           <div style="width:32px;height:32px;background:#00e5b0;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="fa fa-gift" style="color:#0a0f14;font-size:13px;"></i></div>
           <div><div style="font-size:12px;font-weight:700;color:#065f46;">Aplikasi 100% Gratis</div><div style="font-size:10.5px;color:#059669;margin-top:1px;line-height:1.5;">Bebas digunakan &amp; dimodifikasi. <strong>Dilarang diperjualbelikan.</strong></div></div>
